@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iirpg"
+version = "0.1.0"
+description = "Two connected chats, a first step toward a text RPG."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+iirpg = "iirpg.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+iirpg = ["web/*"]

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111414">
+  <title>Два чата — IIRPG</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="workspace">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="IIRPG — главная"><span class="brand-mark">ii</span>IIRPG <span class="brand-label">PLAYGROUND</span></a>
+      <div class="connection" role="status"><span class="status-dot"></span><span id="connection-label">Подключение…</span></div>
+    </header>
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <div><div class="eyebrow">НАЧАЛО ДИАЛОГА <span> / 001</span></div><h1 id="page-title">Одна очередь. <span>Два чата.</span></h1><p>Каждый чат видит только доступные ему сообщения общей ленты.</p></div>
+        <div class="room-actions"><button id="copy-link" class="button-secondary" disabled>Скопировать ссылку</button><button id="new-room" class="button-icon" title="Новый диалог" aria-label="Начать новый диалог" disabled>＋</button></div>
+      </section>
+      <div id="notice" class="notice" role="alert" hidden></div>
+      <form id="access-gate" class="notice access-gate" hidden><label for="access-key">Ключ доступа к диалогу</label><input id="access-key" type="password" autocomplete="current-password" placeholder="Вставьте ключ из вашей ссылки" required><button class="button-secondary" type="submit">Открыть чат</button></form>
+      <section id="chats" class="chats" aria-label="Два представления общей очереди"></section>
+      <footer class="workspace-footer"><span><span class="small-dot"></span> Общее пространство диалога</span><span>История сохраняется автоматически</span></footer>
+    </main>
+  </div>
+  <template id="chat-template">
+    <article class="chat">
+      <header class="chat-header"><div class="avatar" aria-hidden="true"></div><div><h2></h2><p class="chat-subtitle"></p></div><span class="chat-number" aria-hidden="true"></span></header>
+      <div class="message-list" role="log" aria-live="polite" aria-relevant="additions" tabindex="0">
+        <div class="empty-state"><div class="empty-icon" aria-hidden="true">↔</div><h3>Здесь начинается разговор</h3><p>Напишите сообщение и выберите,<br>каким чатам оно будет видно.</p></div>
+      </div>
+      <form class="composer"><div class="visibility-control"><label class="visibility-label">Видимость</label><select class="visibility-select" disabled><option value="all">Обоим чатам</option><option value="self">Только этому чату</option></select></div><label class="sr-only"></label><div class="composer-field"><textarea rows="2" maxlength="2000" placeholder="Напишите сообщение…" disabled></textarea><button class="send-button" type="submit" aria-label="Отправить сообщение" disabled>↑</button></div><div class="composer-meta"><span>Enter — отправить <span class="meta-separator">·</span> Shift + Enter — новая строка</span><span class="character-count">0 / 2000</span></div><p class="form-error" role="alert" hidden></p></form>
+    </article>
+  </template>
+</body>
+</html>

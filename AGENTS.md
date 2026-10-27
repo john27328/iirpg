@@ -2,42 +2,43 @@
 
 ## Project Scope & Current State
 
-This repository will host a text RPG using open Pathfinder rules, with a Python backend. All project code and distributable game content will be public; do not split the project into public and private repositories or components. It currently has no application code, dependency manifest, tests, or commit history. Framework and tooling choices remain open.
+This text RPG uses open Pathfinder rules and a Python backend. Two chat views publish and subscribe to one persistent queue. All code and distributable content will be public; do not split public and private repositories or components.
 
 ## Project Structure & Module Organization
 
-- `src/iirpg/`: Python backend package, organized into modules and layers for game rules, narrative/session state, persistence, and transport interfaces.
-- `tests/`: automated tests, organized to mirror the source modules.
-- `data/`: structured rules content and game assets, with source attribution.
-- `docs/`: architecture decisions, setup instructions, and rules interpretations.
+- `src/iirpg/`: Python package; `domain.py` defines messages and visibility, `application.py` filters subscriptions, `storage.py` persists JSON envelopes, and `server.py` handles HTTP.
+- `src/iirpg/web/`: browser interface, with two instances of one JavaScript `Chat` class.
+- `tests/`: fast tests; `release_tests/`: separately invoked release checks.
+- `docs/`: queue format and architecture; future `data/`: attributed rules content.
 
 Keep game mechanics independent of HTTP handlers and storage. Add directories when they contain useful files.
 
 ## Build, Test, and Development Commands
 
-No build, server, lint, or test commands are configured yet. For an isolated local Python environment:
+Python 3.11+; runtime and tests use the standard library. No frontend build is needed.
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+PYTHONPATH=src python3 -m iirpg --host 127.0.0.1 --port 8000
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+PYTHONPATH=src python3 -m unittest discover -s release_tests -v
 ```
 
-When introducing dependencies, declare them in `pyproject.toml` and document installation, server startup, and test commands. Do not assume a web framework, package manager, or database has been selected.
+Commands start the server, run fast tests, and run release checks. SQLite history defaults to `.local/chat.sqlite3`. Declare dependencies in `pyproject.toml`; update `README.md` commands.
 
 ## Coding Style & Naming Conventions
 
-Use four-space indentation, `snake_case` for functions and modules, `PascalCase` for classes, and `UPPER_SNAKE_CASE` for constants. Add type annotations to public interfaces. No formatter or linter is configured; document selected tools when introducing them.
+Use four-space indentation, `snake_case` functions/modules, `PascalCase` classes, and `UPPER_SNAKE_CASE` constants. Type public interfaces. No formatter or linter is configured.
 
 ## Testing Guidelines
 
-No testing framework or coverage threshold exists yet. Prefer `pytest` for initial tests, using `test_*.py` files and `test_<behavior>` functions. Cover rule boundaries, invalid actions, and session transitions. Inject dice randomness so tests are deterministic. Document the Pathfinder edition and rule source behind mechanics assertions.
+Use `unittest`, `test_*.py`, and `test_<behavior>` methods. Cover non-AI logic with focused behavior and regression tests: visibility, cursors, persistence, migrations, isolation, retries, and validation. Keep the default suite within a few seconds; no coverage quota or tests mirroring implementation. Use temporary data and deterministic dice; cite rules sources. Never call external AI APIs in these suites; stub AI boundaries. Run fast tests for relevant changes. Put slower process, browser, load, and deployment checks in `release_tests/`; run applicable checks before releases. Keep live AI evaluations separately opt-in.
 
 ## Commit & Pull Request Guidelines
 
-There is no existing commit convention. Use concise, imperative subjects, such as `Add deterministic skill checks`. Keep changes focused. Pull requests should describe behavior, link relevant issues, state verification performed, and identify rules assumptions or configuration changes.
+Use imperative subjects, following `Add repository contributor guidelines`. Keep changes focused. PRs describe behavior, linked issues, verification, rules assumptions, and configuration changes.
 
 ## Rules Licensing & Configuration
 
-Use only Pathfinder content permitted by its source license: ORC or OGL, as applicable. Record the edition and source; include required license texts, notices, and attribution when distributing content or adaptations. Do not relicense third-party rules under the project's code license. Exclude Paizo Reserved Material, Product Identity, and trademarks unless separately permitted. Follow [Paizo's licensing guidance](https://paizo.com/licenses).
+Use Pathfinder content permitted by its source license: ORC or OGL. Record edition and source; distribute required licenses, notices, and attribution. Do not relicense third-party rules under the code license. Exclude Paizo Reserved Material, Product Identity, and trademarks unless separately permitted. Follow [Paizo's licensing guidance](https://paizo.com/licenses).
 
 Keep secrets, local saves, and `.venv/` out of version control; provide placeholder configuration examples instead.
