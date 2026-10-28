@@ -19,7 +19,7 @@ class ChatTests(unittest.TestCase):
         first, second = Chat("first", "First"), Chat("second", "Second")
         self.assertEqual(first.send(" Hello ").sender, "first")
         self.assertEqual(second.send("Ответ").sender, "second")
-        self.assertEqual(first.send(" Hello ").text, "Hello")
+        self.assertEqual(first.send(" Hello \n").text, " Hello \n")
         self.assertNotIn("receiver", first.send("Hello").to_dict())
 
     def test_visibility_selects_subscribers(self) -> None:
@@ -145,6 +145,27 @@ class StorageTests(unittest.TestCase):
             with self.subTest(viewer=viewer), self.assertRaises(ValueError):
                 self.service.messages(self.room, viewer)
 
+    def test_choices_survive_restart_and_do_not_restrict_free_text(self) -> None:
+        payload = {**self.payload("Куда пойдёте?", "second"), "choices": ["В лес", "В город"]}
+        question = self.service.send(self.room, payload)
+        restarted = ChatService(ChatStore(self.database))
+        self.assertEqual(restarted.messages(self.room, "first")["messages"][0]["choices"], payload["choices"])
+        self.assertEqual(restarted.send(self.room, payload), question)
+        with self.assertRaises(MessageConflict):
+            restarted.send(self.room, {**payload, "choices": ["Домой"]})
+        reply = restarted.send(self.room, self.payload("Останусь на месте и разобью лагерь"))
+        self.assertEqual(reply["choices"], [])
+        self.assertEqual(restarted.messages(self.room, "second")["messages"], [question, reply])
+
+    def test_invalid_choices_are_rejected_without_appending(self) -> None:
+        for choices in [None, "Ответ", {}, [1], [None], [{}], [""], [" \n"], ["x" * 201], ["Да"] * 11]:
+            with self.subTest(choices=choices), self.assertRaises(ValueError):
+                self.service.send(self.room, {**self.payload(), "choices": choices})
+        self.assertEqual(self.service.messages(self.room, "first")["messages"], [])
+        boundary = ["x" * 200 for _ in range(10)]
+        message = self.service.send(self.room, {**self.payload(), "choices": boundary})
+        self.assertEqual(message["choices"], boundary)
+
     def test_legacy_history_migrates_once_and_preserves_ids(self) -> None:
         database = Path(self.directory.name) / "legacy.sqlite3"
         request_id = str(uuid4())
@@ -164,6 +185,7 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(history[0]["text"], "Legacy")
             self.assertEqual(history[0]["request_id"], request_id)
             self.assertEqual(history[0]["visibility"]["mode"], "all")
+            self.assertEqual(history[0]["choices"], [])
         sent = service.send(self.room, self.payload("New"))
         self.assertGreater(sent["id"], 7)
 

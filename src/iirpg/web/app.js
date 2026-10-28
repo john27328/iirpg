@@ -80,7 +80,7 @@ class Chat {
     this.element.classList.add(key);
     $("h2", this.element).textContent = `Чат ${number}`;
     $(".avatar", this.element).textContent = number;
-    $(".chat-number", this.element).textContent = `${number} / 02`;
+    $(".chat-number", this.element).textContent = "CHAT";
     $(".chat-subtitle", this.element).textContent = subtitle;
     this.list = $(".message-list", this.element);
     this.input = $("textarea", this.element);
@@ -111,8 +111,13 @@ class Chat {
     this.input.disabled = !ready || this.busy;
     this.audience.disabled = !ready || this.busy;
     this.button.disabled = !ready || this.busy || !this.input.value.trim();
+    this.element.querySelectorAll(".reply-choice").forEach((button) => {
+      button.disabled = !ready || this.busy;
+    });
     $(".character-count", this.element).textContent = `${Array.from(this.input.value).length} / 2000`;
   }
+
+  hasDraft() { return Boolean(this.input.value.trim()); }
 
   reset() {
     this.ids.clear();
@@ -138,7 +143,7 @@ class Chat {
     item.dataset.messageId = message.id;
     const label = document.createElement("span");
     label.className = "message-label";
-    label.textContent = outgoing ? "Вы" : ({ first: "Чат 01", second: "Чат 02" }[message.sender] || message.sender);
+    label.textContent = outgoing ? "Вы" : ({ first: "Чат", second: "JSON-заглушка" }[message.sender] || message.sender);
     if (message.visibility.mode === "selected") label.textContent += " · Ограниченная видимость";
     const text = document.createElement("p");
     text.className = "message-text";
@@ -147,7 +152,27 @@ class Chat {
     time.className = "message-time";
     time.dateTime = message.created_at;
     time.textContent = new Date(message.created_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-    item.append(label, text, time);
+    item.append(label, text);
+    if (!outgoing && message.choices?.length) {
+      const choices = document.createElement("div");
+      choices.className = "reply-choices";
+      choices.setAttribute("role", "group");
+      choices.setAttribute("aria-label", "Варианты ответа");
+      for (const choice of message.choices) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "reply-choice";
+        button.textContent = choice;
+        button.disabled = !ready || this.busy;
+        button.addEventListener("click", () => this.send(choice));
+        choices.append(button);
+      }
+      const hint = document.createElement("span");
+      hint.className = "reply-hint";
+      hint.textContent = "Нажмите на вариант для отправки или напишите свой ответ ниже.";
+      item.append(choices, hint);
+    }
+    item.append(time);
     const following = Array.from(this.list.children).find(
       (child) => Number(child.dataset.messageId) > message.id,
     );
@@ -165,8 +190,8 @@ class Chat {
     this.hasMore = page.has_more;
   }
 
-  async send() {
-    const text = this.input.value.trim();
+  async send(choice = null) {
+    const text = choice ?? this.input.value.trim();
     if (!ready || this.busy || !text) return;
     const epoch = generation;
     const targetRoom = room;
@@ -184,7 +209,7 @@ class Chat {
         method: "POST", body: JSON.stringify(this.retry),
       });
       if (epoch !== generation) return;
-      this.input.value = "";
+      if (choice === null) this.input.value = "";
       this.retry = null;
       setConnection(true);
       try { await refreshChats(targetRoom, epoch); } catch {
@@ -192,7 +217,9 @@ class Chat {
       }
     } catch (error) {
       if (epoch !== generation) return;
-      this.error.textContent = `${error.message} Текст сохранён в поле ввода.`;
+      this.error.textContent = choice === null
+        ? `${error.message} Текст сохранён в поле ввода.`
+        : `${error.message} Отправка не подтверждена. Нажмите вариант ещё раз для повтора.`;
       this.error.hidden = false;
       setConnection(false);
     } finally {
@@ -205,9 +232,134 @@ class Chat {
   }
 }
 
+class JsonStub {
+  constructor() {
+    this.key = "second";
+    this.element = $("#json-stub-template").content.firstElementChild.cloneNode(true);
+    this.list = $(".json-log", this.element);
+    this.input = $(".json-input", this.element);
+    this.button = $(".json-send", this.element);
+    this.newIdButton = $(".json-new-id", this.element);
+    this.error = $(".form-error", this.element);
+    this.status = $(".json-status", this.element);
+    this.reset();
+    this.input.addEventListener("input", () => this.update());
+    this.newIdButton.addEventListener("click", () => {
+      try {
+        const payload = this.parse();
+        payload.request_id = crypto.randomUUID();
+        this.input.value = JSON.stringify(payload, null, 2);
+        this.error.hidden = true;
+        this.status.hidden = true;
+        this.update();
+      } catch (error) { this.showError(error); }
+    });
+    $("form", this.element).addEventListener("submit", (event) => {
+      event.preventDefault();
+      this.send();
+    });
+    $("#chats").append(this.element);
+  }
+
+  update() {
+    this.input.disabled = !ready || this.busy;
+    this.newIdButton.disabled = !ready || this.busy;
+    this.button.disabled = !ready || this.busy || !this.input.value.trim();
+  }
+
+  hasDraft() { return this.input.value !== this.initialRaw; }
+
+  reset() {
+    this.cursor = 0;
+    this.hasMore = false;
+    this.ids = new Set();
+    this.busy = false;
+    this.initialRaw = JSON.stringify({
+      sender: "second", type: "chat.message", request_id: crypto.randomUUID(),
+      text: "Перед вами закрытая дверь. Что будете делать?",
+      choices: ["Осмотреться", "Открыть дверь", "Уйти"],
+      visibility: { mode: "all", chat_ids: [] }, metadata: {},
+    }, null, 2);
+    this.input.value = this.initialRaw;
+    this.error.hidden = true;
+    this.status.hidden = true;
+    this.list.replaceChildren($(".empty-state", $("#json-stub-template").content).cloneNode(true));
+    this.update();
+  }
+
+  parse() {
+    let payload;
+    try { payload = JSON.parse(this.input.value); } catch {
+      throw new Error("Некорректный JSON. Проверьте кавычки, запятые и скобки.");
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new Error("Ожидается один JSON-объект сообщения.");
+    }
+    return payload;
+  }
+
+  showError(error) {
+    this.error.textContent = error.message;
+    this.error.hidden = false;
+  }
+
+  receive(message) {
+    if (this.ids.has(message.id)) return;
+    this.ids.add(message.id);
+    $(".empty-state", this.list)?.remove();
+    const nearBottom = this.list.scrollHeight - this.list.scrollTop - this.list.clientHeight < 90;
+    const entry = document.createElement("pre");
+    entry.className = "json-entry";
+    entry.dataset.messageId = message.id;
+    entry.textContent = JSON.stringify(message, null, 2);
+    const following = Array.from(this.list.children).find((child) => Number(child.dataset.messageId) > message.id);
+    this.list.insertBefore(entry, following || null);
+    if (nearBottom) this.list.scrollTop = this.list.scrollHeight;
+  }
+
+  read(roomId, after = this.cursor) {
+    return request(`/api/rooms/${roomId}/messages?chat=${this.key}&after=${after}`);
+  }
+
+  applyPage(page) {
+    page.messages.forEach((message) => this.receive(message));
+    this.cursor = Math.max(this.cursor, page.next_cursor);
+    this.hasMore = page.has_more;
+  }
+
+  async send() {
+    if (!ready || this.busy) return;
+    this.error.hidden = true;
+    this.status.hidden = true;
+    try { this.parse(); } catch (error) { this.showError(error); return; }
+    const raw = this.input.value;
+    const epoch = generation;
+    const targetRoom = room;
+    this.busy = true;
+    this.update();
+    try {
+      const result = await request(`/api/rooms/${targetRoom}/messages`, { method: "POST", body: raw });
+      if (epoch !== generation) return;
+      this.initialRaw = raw;
+      this.status.textContent = `Запись #${result.message.id} принята. Для нового сообщения смените request_id.`;
+      this.status.hidden = false;
+      setConnection(true);
+      try { await refreshChats(targetRoom, epoch); } catch {
+        if (epoch === generation) setConnection(false);
+      }
+    } catch (error) {
+      if (epoch !== generation) return;
+      this.showError(error);
+      if (!error.status || error.status >= 500) setConnection(false);
+    } finally {
+      if (epoch === generation) { this.busy = false; this.update(); }
+    }
+  }
+}
+
 const first = new Chat("first", "01", "Читает доступные сообщения общей ленты");
-const second = new Chat("second", "02", "Читает доступные сообщения общей ленты");
-const chats = [first, second];
+const stub = new JsonStub();
+const chats = [first, stub];
 
 async function refreshChats(roomId, epoch) {
   const pages = await Promise.all(chats.map((chat) => chat.read(roomId)));
@@ -290,7 +442,7 @@ async function openRoom(fresh = false) {
 
 newButton.addEventListener("click", () => {
   if (chats.some((chat) => chat.busy)) return;
-  if (chats.some((chat) => chat.input.value.trim()) && !confirm("Начать новый диалог? Неотправленный текст будет очищен.")) return;
+  if (chats.some((chat) => chat.hasDraft()) && !confirm("Начать новый диалог? Неотправленный текст будет очищен.")) return;
   openRoom(true);
 });
 

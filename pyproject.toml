@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "iirpg"
 version = "0.1.0"
-description = "Two connected chats, a first step toward a text RPG."
+description = "A chat and JSON test stub sharing a text RPG message queue."
 requires-python = ">=3.11"
 dependencies = []
 

@@ -51,5 +51,8 @@ class ChatService:
         visibility = self._visibility(payload.get("visibility", {"mode": "all"}))
         if "metadata" in payload and not isinstance(payload["metadata"], dict):
             raise ValueError("metadata должен быть объектом JSON.")
-        message = self.chats[sender].send(payload.get("text"), visibility, payload.get("metadata"))
+        choices = payload.get("choices", [])
+        if not isinstance(choices, list):
+            raise ValueError("choices должен быть массивом строк.")
+        message = self.chats[sender].send(payload.get("text"), visibility, payload.get("metadata"), tuple(choices))
         return self.store.append(room_id, request_id, message)

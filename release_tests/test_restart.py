@@ -66,7 +66,8 @@ class ReleaseTests(unittest.TestCase):
                 with urlopen(Request(base + path, data=data, headers=headers), timeout=5) as response:
                     return json.load(response)
 
-            shared = {"sender": "first", "text": "Shared", "request_id": str(uuid4())}
+            shared = {"sender": "first", "text": "Shared", "request_id": str(uuid4()),
+                      "choices": ["Continue", "Look around"]}
             restricted = {"sender": "first", "text": "First only", "request_id": str(uuid4()),
                           "visibility": {"mode": "selected", "chat_ids": ["first"]}}
             with running_server(directory) as base:

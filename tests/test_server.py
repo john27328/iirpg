@@ -31,6 +31,9 @@ class ServerTests(unittest.TestCase):
 
     def request(self, path: str, payload: object = None) -> tuple[int, bytes]:
         data = None if payload is None else json.dumps(payload).encode()
+        return self.raw_request(path, data)
+
+    def raw_request(self, path: str, data: bytes | None = None) -> tuple[int, bytes]:
         request = Request(self.base + path, data=data, headers={"Content-Type": "application/json"})
         try:
             response = urlopen(request, timeout=5)
@@ -96,6 +99,56 @@ class ServerTests(unittest.TestCase):
         self.assertNotIn(b"Restricted first-only content", second_raw)
         self.assertNotIn(b"secret-room", second_raw)
         self.assertGreater(json.loads(second_raw)["next_cursor"], 0)
+
+    def test_raw_json_preserves_text_metadata_and_visibility(self) -> None:
+        room = json.loads(self.request("/api/rooms", {})[1])["room_id"]
+        path = f"/api/rooms/{room}/messages"
+        payload = {
+            "sender": "second", "type": "chat.message", "request_id": str(uuid4()),
+            "text": "  Строка с пробелами\n\n  Вторая строка\n ",
+            "choices": ["Вариант 1", "Вариант 2"],
+            "visibility": {"mode": "selected", "chat_ids": ["first"]},
+            "metadata": {"source": "json-stub", "values": [False, 0, None, {"label": "Тест"}]},
+        }
+        raw = json.dumps(payload, ensure_ascii=False, indent=4).encode()
+        status, body = self.raw_request(path, raw)
+        self.assertEqual(status, 201)
+        message = json.loads(body)["message"]
+        for key, value in payload.items():
+            self.assertEqual(message[key], value)
+        first = json.loads(self.request(path + "?chat=first")[1])["messages"]
+        self.assertEqual(first, [message])
+        self.assertEqual(json.loads(self.request(path + "?chat=second")[1])["messages"], [])
+        self.assertEqual(json.loads(self.raw_request(path, raw)[1])["message"]["id"], message["id"])
+
+    def test_malformed_json_does_not_append_a_queue_entry(self) -> None:
+        room = json.loads(self.request("/api/rooms", {})[1])["room_id"]
+        path = f"/api/rooms/{room}/messages"
+        for raw in [b'{"sender":', b'not json', b'null', b'[]']:
+            with self.subTest(raw=raw):
+                status, body = self.raw_request(path, raw)
+                self.assertEqual(status, 400)
+                self.assertIn("error", json.loads(body))
+        self.assertEqual(json.loads(self.request(path + "?chat=first")[1])["messages"], [])
+
+    def test_choices_allow_a_custom_reply(self) -> None:
+        room = json.loads(self.request("/api/rooms", {})[1])["room_id"]
+        path = f"/api/rooms/{room}/messages"
+        payload = {"sender": "second", "request_id": str(uuid4()),
+                   "text": "Что будете делать?", "choices": ["Открыть дверь", "Уйти"]}
+        status, body = self.request(path, payload)
+        self.assertEqual(status, 201)
+        question = json.loads(body)["message"]
+        self.assertEqual(question["choices"], payload["choices"])
+        self.assertEqual(json.loads(self.request(path + "?chat=first")[1])["messages"][0]["choices"], payload["choices"])
+        status, body = self.request(path, {"sender": "first", "request_id": str(uuid4()),
+                                          "text": "Постучать и спросить, кто внутри"})
+        self.assertEqual(status, 201)
+        reply = json.loads(body)["message"]
+        self.assertEqual(reply["text"], "Постучать и спросить, кто внутри")
+        self.assertEqual(reply["choices"], [])
+        self.assertEqual(json.loads(self.request(path + "?chat=second")[1])["messages"], [question, reply])
+        self.assertEqual(self.request(path, {**payload, "request_id": str(uuid4()), "choices": "bad"})[0], 400)
 
 
 class AccessTests(unittest.TestCase):

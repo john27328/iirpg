@@ -2,12 +2,12 @@
 
 ## Project Scope & Current State
 
-This text RPG uses open Pathfinder rules and a Python backend. Two chat views publish and subscribe to one persistent queue. All code and distributable content will be public; do not split public and private repositories or components.
+This text RPG uses open Pathfinder rules and a Python backend. A chat and JSON test stub share one persistent queue. All code and distributable content will be public; do not split public and private repositories or components.
 
 ## Project Structure & Module Organization
 
 - `src/iirpg/`: Python package; `domain.py` defines messages and visibility, `application.py` filters subscriptions, `storage.py` persists JSON envelopes, and `server.py` handles HTTP.
-- `src/iirpg/web/`: browser interface, with two instances of one JavaScript `Chat` class.
+- `src/iirpg/web/`: browser interface, with one `Chat` and a raw JSON `JsonStub`.
 - `tests/`: fast tests; `release_tests/`: separately invoked release checks.
 - `docs/`: queue format and architecture; future `data/`: attributed rules content.
 

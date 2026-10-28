@@ -76,7 +76,7 @@ class ChatStore:
 
     @staticmethod
     def _decode(row: sqlite3.Row) -> dict:
-        return {**json.loads(row["envelope"]), "id": row["id"],
+        return {"choices": [], **json.loads(row["envelope"]), "id": row["id"],
                 "room_id": row["room_id"], "request_id": row["request_id"]}
 
     def page(self, room_id: str, after: int = 0) -> dict:
@@ -107,6 +107,6 @@ class ChatStore:
             original = self._decode(row)
             expected = message.to_dict()
             if any(original[key] != expected[key] for key in
-                   ("sender", "type", "text", "visibility", "metadata", "schema_version")):
+                   ("sender", "type", "text", "visibility", "metadata", "choices", "schema_version")):
                 raise MessageConflict("Идентификатор сообщения уже использован.")
             return original

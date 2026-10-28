@@ -137,7 +137,7 @@ class ChatHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Two connected chats on a Python server")
+    parser = argparse.ArgumentParser(description="A chat and JSON test stub on a Python server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--database", type=Path, default=Path(".local/chat.sqlite3"))
