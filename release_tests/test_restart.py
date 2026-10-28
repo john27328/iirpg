@@ -52,6 +52,41 @@ def running_server(directory: Path):
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_dice_offer_waits_for_player_across_process_restarts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            token = secrets.token_urlsafe(32)
+            (directory / "access-token").write_text(token)
+
+            def request(base, path, payload=None):
+                data = None if payload is None else json.dumps(payload).encode()
+                headers = {"Content-Type": "application/json", "Authorization": "Bearer " + token}
+                with urlopen(Request(base + path, data=data, headers=headers), timeout=5) as response:
+                    return json.load(response)
+
+            with running_server(directory) as base:
+                room = request(base, "/api/rooms", {})["room_id"]
+                path = f"/api/rooms/{room}/messages"
+                offer_payload = {"sender": "second", "type": "tool.offer", "tool": "dice.roll",
+                                 "recipient": "first", "request_id": str(uuid4()), "text": "Проверьте скрытность.",
+                                 "arguments": {"system": "d20", "roll": "1d20+5", "success": {"operator": ">=", "target": 15}}}
+                offer = request(base, path, offer_payload)["message"]
+                self.assertEqual(request(base, path + "?chat=first")["messages"], [offer])
+
+            with running_server(directory) as base:
+                self.assertEqual(request(base, path + "?chat=first")["messages"], [offer])
+                self.assertEqual(request(base, path, offer_payload)["message"], offer)
+                accept = {"sender": "first", "type": "tool.call", "tool": "dice.roll",
+                          "request_id": offer["roll_request_id"], "offer_id": offer["request_id"]}
+                result = request(base, path, accept)
+                history = request(base, path + "?chat=first")["messages"]
+                self.assertEqual([event["type"] for event in history], ["tool.offer", "tool.call", "tool.result"])
+                self.assertEqual(result["message"]["requested_by"], "first")
+
+            with running_server(directory) as base:
+                self.assertEqual(request(base, path, accept), result)
+                self.assertEqual(request(base, path + "?chat=first")["messages"], history)
+
     def test_history_visibility_and_retry_survive_process_restart(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

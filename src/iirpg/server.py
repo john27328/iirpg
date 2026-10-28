@@ -139,8 +139,8 @@ class ChatHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.CONFLICT, {"error": str(error)})
         except ValueError as error:
             self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
-        except KeyError:
-            self._json(HTTPStatus.NOT_FOUND, {"error": "Комната не найдена."})
+        except KeyError as error:
+            self._json(HTTPStatus.NOT_FOUND, {"error": str(error.args[0])})
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
             pass
         except Exception:

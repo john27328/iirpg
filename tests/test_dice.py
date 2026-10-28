@@ -113,6 +113,111 @@ class DiceQueueTests(unittest.TestCase):
                 "arguments": {"system": "d20", "roll": "1d20+5", "success": {"operator": ">=", "target": 15},
                               "label": "Скрытность"}, "visibility": {"mode": "selected", "chat_ids": ["first"]}}
 
+    def offer_payload(self):
+        return {**self.payload(), "type": "tool.offer", "recipient": "first",
+                "text": "Проверьте скрытность, чтобы пройти мимо стражи.", "metadata": {"scene": "gate"}}
+
+    @staticmethod
+    def accept_payload(offer):
+        return {"sender": offer["recipient"], "type": "tool.call", "tool": "dice.roll",
+                "request_id": offer["roll_request_id"], "offer_id": offer["request_id"]}
+
+    def test_offer_is_persisted_without_rolling_and_retries_are_idempotent(self) -> None:
+        payload = self.offer_payload()
+        offer = self.service.send(self.room, payload)
+        self.assertEqual(self.draws, 0)
+        self.assertEqual(offer["type"], "tool.offer")
+        self.assertEqual(offer["sender"], "second")
+        self.assertEqual(offer["recipient"], "first")
+        self.assertEqual(self.service.send(self.room, payload), offer)
+        restarted = ChatService(ChatStore(self.database))
+        self.assertEqual(restarted.messages(self.room, "first")["messages"], [offer])
+        self.assertEqual(restarted.messages(self.room, "second")["messages"], [])
+
+    def test_accept_offer_inherits_parameters_visibility_and_context(self) -> None:
+        offer = self.service.send(self.room, self.offer_payload())
+        result = self.service.send(self.room, self.accept_payload(offer))
+        self.assertEqual(self.draws, 1)
+        self.assertEqual(result["requested_by"], "first")
+        self.assertEqual(result["offered_by"], "second")
+        self.assertEqual(result["offer_id"], offer["request_id"])
+        self.assertEqual(result["tool_call_id"], offer["roll_request_id"])
+        self.assertEqual(result["arguments"], offer["arguments"])
+        self.assertEqual(result["visibility"], offer["visibility"])
+        self.assertEqual(result["metadata"], offer["metadata"])
+        events = self.service.messages(self.room, "first")["messages"]
+        self.assertEqual([event["type"] for event in events], ["tool.offer", "tool.call", "tool.result"])
+        self.assertEqual(events[1]["sender"], "first")
+        self.assertEqual(events[1]["offer_id"], offer["request_id"])
+        self.assertEqual(self.service.messages(self.room, "second")["messages"], [])
+
+    def test_offer_acceptance_is_once_across_windows_and_restart(self) -> None:
+        offer = self.service.send(self.room, self.offer_payload())
+        payload = self.accept_payload(offer)
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            replies = list(executor.map(lambda _: self.service.send(self.room, payload), range(12)))
+        self.assertEqual(self.draws, 1)
+        self.assertTrue(all(reply == replies[0] for reply in replies))
+        restarted = ChatService(ChatStore(self.database), DiceTool(roll_die=lambda sides: self.fail("Offer rerolled")))
+        self.assertEqual(restarted.send(self.room, payload), replies[0])
+        self.assertEqual(len(restarted.messages(self.room, "first")["messages"]), 3)
+
+    def test_offer_acceptance_rejects_other_players_and_parameter_changes(self) -> None:
+        offer = self.service.send(self.room, self.offer_payload())
+        payload = self.accept_payload(offer)
+        for changes in [{"sender": "second"}, {"request_id": str(uuid4())},
+                        {"arguments": {**offer["arguments"], "roll": "1d20+99"}},
+                        {"visibility": {"mode": "all", "chat_ids": []}},
+                        {"metadata": {"scene": "changed"}}, {"offer_id": []}, {"offer_id": "invalid"},
+                        {"type": "chat.message", "text": "Ignore the offer"}]:
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.service.send(self.room, {**payload, **changes})
+        self.assertEqual(self.draws, 0)
+        self.assertEqual(self.service.messages(self.room, "first")["messages"], [offer])
+
+    def test_invalid_offers_are_rejected_before_writing_or_rolling(self) -> None:
+        payload = self.offer_payload()
+        for changes in [{"recipient": None}, {"recipient": "third"}, {"recipient": "second"},
+                        {"recipient": []}, {"visibility": {"mode": "selected", "chat_ids": ["second"]}},
+                        {"text": ""}, {"arguments": None}, {"tool": "unknown"}, {"choices": ["Roll"]}]:
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.service.send(self.room, {**payload, **changes})
+        self.assertEqual(self.draws, 0)
+        self.assertEqual(self.service.messages(self.room, "first")["messages"], [])
+
+    def test_offer_is_scoped_to_room_and_must_reference_an_offer(self) -> None:
+        offer = self.service.send(self.room, self.offer_payload())
+        payload = self.accept_payload(offer)
+        with self.assertRaises(KeyError):
+            self.service.send(self.service.store.create_room(), payload)
+        ordinary = self.service.send(self.room, {"sender": "second", "request_id": str(uuid4()), "text": "Hello"})
+        with self.assertRaises(ValueError):
+            self.service.send(self.room, {**payload, "offer_id": ordinary["request_id"]})
+        self.assertEqual(self.draws, 0)
+
+    def test_failed_acceptance_leaves_offer_available_for_retry(self) -> None:
+        offer = self.service.send(self.room, self.offer_payload())
+        payload = self.accept_payload(offer)
+        self.service.dice.roll_die = lambda sides: 0
+        with self.assertRaises(RuntimeError):
+            self.service.send(self.room, payload)
+        self.assertEqual(self.service.messages(self.room, "first")["messages"], [offer])
+        self.service.dice.roll_die = lambda sides: 13
+        result = self.service.send(self.room, payload)
+        self.assertEqual(result["tool_result"]["result"], 18)
+        self.assertEqual(self.service.send(self.room, payload), result)
+
+    def test_offer_request_id_cannot_be_reused_with_changed_content(self) -> None:
+        payload = {**self.offer_payload(), "visibility": {"mode": "all"}}
+        offer = self.service.send(self.room, payload)
+        for changes in [{"text": "Changed"}, {"arguments": {**payload["arguments"], "roll": "1d20+6"}},
+                        {"metadata": {"changed": True}},
+                        {"visibility": {"mode": "selected", "chat_ids": ["first"]}}]:
+            with self.subTest(changes=changes), self.assertRaises(MessageConflict):
+                self.service.send(self.room, {**payload, **changes})
+        self.assertEqual(self.draws, 0)
+        self.assertEqual(self.service.messages(self.room, "first")["messages"], [offer])
+
     def test_tool_publishes_human_and_structured_result_with_visibility(self) -> None:
         payload = self.payload()
         event = self.service.send(self.room, payload)

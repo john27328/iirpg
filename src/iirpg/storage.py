@@ -93,21 +93,36 @@ class ChatStore:
                 "has_more": len(rows) > PAGE_SIZE}
 
     def append(self, room_id: str, request_id: str, message: Message) -> dict:
+        return self.append_event(room_id, request_id, message.to_dict())
+
+    def event(self, room_id: str, request_id: str) -> dict:
+        with self._connection() as connection:
+            self._require_room(connection, room_id)
+            row = connection.execute(
+                "SELECT id, room_id, request_id, envelope FROM queue_events "
+                "WHERE room_id = ? AND request_id = ?", (room_id, request_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError("Запись не найдена.")
+            return self._decode(row)
+
+    def append_event(self, room_id: str, request_id: str, envelope: dict) -> dict:
         with self._connection() as connection:
             self._require_room(connection, room_id)
             connection.execute(
                 "INSERT INTO queue_events (room_id, request_id, envelope) VALUES (?, ?, ?) "
                 "ON CONFLICT(room_id, request_id) DO NOTHING",
-                (room_id, request_id, json.dumps(message.to_dict(), ensure_ascii=False, allow_nan=False)),
+                (room_id, request_id, json.dumps(envelope, ensure_ascii=False, allow_nan=False)),
             )
             row = connection.execute(
                 "SELECT id, room_id, request_id, envelope FROM queue_events "
                 "WHERE room_id = ? AND request_id = ?", (room_id, request_id),
             ).fetchone()
             original = self._decode(row)
-            expected = message.to_dict()
-            if any(original[key] != expected[key] for key in
-                   ("sender", "type", "text", "visibility", "metadata", "choices", "schema_version")):
+            stored = {key: value for key, value in original.items()
+                      if key not in ("id", "room_id", "request_id", "created_at")}
+            expected = {key: value for key, value in envelope.items() if key != "created_at"}
+            if stored != expected:
                 raise MessageConflict("Идентификатор сообщения уже использован.")
             return original
 

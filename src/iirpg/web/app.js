@@ -128,6 +128,9 @@ class Chat {
     this.element.querySelectorAll(".reply-choice").forEach((button) => {
       button.disabled = !ready || this.busy;
     });
+    this.element.querySelectorAll(".dice-offer-roll").forEach((button) => {
+      button.disabled = !ready || this.busy;
+    });
     this.dicePanel.querySelectorAll("input, select, button").forEach((control) => {
       control.disabled = !ready || this.busy || !diceCatalog;
     });
@@ -156,7 +159,7 @@ class Chat {
     if (this.ids.has(message.id)) return;
     this.ids.add(message.id);
     $(".empty-state", this.list)?.remove();
-    if (message.tool === "dice.roll" && ["tool.call", "tool.result"].includes(message.type)) {
+    if (message.tool === "dice.roll" && ["tool.offer", "tool.call", "tool.result"].includes(message.type)) {
       this.receiveDice(message);
       return;
     }
@@ -207,14 +210,15 @@ class Chat {
 
   receiveDice(message) {
     const isResult = message.type === "tool.result";
-    const key = isResult ? (message.tool_call_id || message.request_id) : message.request_id;
+    const isOffer = message.type === "tool.offer";
+    const key = message.offer_id || (isResult ? (message.tool_call_id || message.request_id) : message.request_id);
     if (!this.toolCalls.has(key)) this.toolCalls.set(key, { item: document.createElement("div") });
     const entry = this.toolCalls.get(key);
-    entry[isResult ? "result" : "call"] = message;
-    const { call, result, item } = entry;
-    const source = call || result;
-    const owner = call?.sender || result.requested_by;
-    const outgoing = owner === this.key;
+    entry[isOffer ? "offer" : isResult ? "result" : "call"] = message;
+    const { offer, call, result, item } = entry;
+    const source = offer || call || result;
+    const owner = call?.sender || result?.requested_by || offer.recipient;
+    const outgoing = offer ? offer.sender === this.key : owner === this.key;
     const arguments_ = source.arguments;
     const roll = result?.tool_result;
     const nearBottom = this.list.scrollHeight - this.list.scrollTop - this.list.clientHeight < 90;
@@ -229,8 +233,8 @@ class Chat {
     header.className = "dice-card-header";
     const label = document.createElement("span");
     label.className = "message-label";
-    const ownerName = outgoing ? "Вы" : ({ first: "Чат", second: "JSON-заглушка" }[owner] || owner || "Кости");
-    label.textContent = `🎲 ${ownerName} · ${arguments_.label}`;
+    const name = (key) => key === this.key ? "Вы" : ({ first: "Чат", second: "JSON-заглушка" }[key] || key || "Кости");
+    label.textContent = `🎲 ${offer ? `${name(offer.sender)} → ${name(offer.recipient)}` : name(owner)} · ${arguments_.label}`;
     if (source.visibility.mode === "selected") label.textContent += " · Ограниченная видимость";
     const time = document.createElement("time");
     time.className = "message-time";
@@ -247,9 +251,29 @@ class Chat {
     formula.textContent = `${arguments_.roll} → ${score} · ${symbols[criterion.operator]} ${criterion.target}`;
     const outcome = document.createElement("span");
     outcome.className = "dice-outcome";
-    outcome.textContent = roll ? (roll.success ? "Успех" : "Неудача") : "Бросок…";
+    outcome.textContent = roll ? (roll.success ? "Успех" : "Неудача") : (offer && !call ? "Ожидает броска" : "Бросок…");
     line.append(formula, outcome);
-    body.append(header, line);
+    body.append(header);
+    if (offer) {
+      const description = document.createElement("p");
+      description.className = "dice-offer-text";
+      description.textContent = offer.text;
+      body.append(description);
+    }
+    body.append(line);
+    if (offer && !call && !result && offer.recipient === this.key) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button-secondary dice-offer-roll";
+      button.textContent = "Бросить кости";
+      button.disabled = !ready || this.busy;
+      button.addEventListener("click", () => this.acceptDiceOffer(offer));
+      const error = document.createElement("p");
+      error.className = "form-error dice-offer-error";
+      error.setAttribute("role", "alert");
+      error.hidden = true;
+      body.append(button, error);
+    }
     if (result) {
       const details = document.createElement("details");
       details.className = "dice-details";
@@ -267,6 +291,38 @@ class Chat {
     );
     this.list.insertBefore(item, following || null);
     if (nearBottom || outgoing) this.list.scrollTop = this.list.scrollHeight;
+  }
+
+  async acceptDiceOffer(offer) {
+    if (!ready || this.busy) return;
+    const epoch = generation;
+    const targetRoom = room;
+    const errorBox = $(".dice-offer-error", this.toolCalls.get(offer.request_id).item);
+    if (errorBox) errorBox.hidden = true;
+    this.busy = true;
+    this.update();
+    try {
+      const response = await request(`/api/rooms/${targetRoom}/tools/dice`, {
+        method: "POST", body: JSON.stringify({ sender: this.key, request_id: offer.roll_request_id,
+          offer_id: offer.request_id }),
+      });
+      if (epoch !== generation) return;
+      this.receive(response.message);
+      setConnection(true);
+      try { await refreshChats(targetRoom, epoch); } catch {
+        if (epoch === generation) setConnection(false);
+      }
+    } catch (error) {
+      if (epoch !== generation) return;
+      const box = $(".dice-offer-error", this.toolCalls.get(offer.request_id).item);
+      if (box) {
+        box.textContent = `${error.message} Можно повторить: кости не будут переброшены.`;
+        box.hidden = false;
+      }
+      if (!error.status || error.status >= 500) setConnection(false);
+    } finally {
+      if (epoch === generation) { this.busy = false; this.update(); }
+    }
   }
 
   read(roomId, after = this.cursor) {
@@ -403,20 +459,24 @@ class JsonStub {
     this.button = $(".json-send", this.element);
     this.newIdButton = $(".json-renew-id", this.element);
     this.diceExampleButton = $(".json-dice-example", this.element);
+    this.diceOfferButton = $(".json-dice-offer", this.element);
     this.error = $(".form-error", this.element);
     this.status = $(".json-status", this.element);
     this.reset();
     this.input.addEventListener("input", () => this.update());
-    this.diceExampleButton.addEventListener("click", () => {
+    const diceExample = (offer) => {
       const system = diceCatalog.systems.d20 ? "d20" : Object.keys(diceCatalog.systems)[0];
       const definition = diceCatalog.systems[system];
-      this.input.value = JSON.stringify({ sender: "second", type: "tool.call", tool: "dice.roll",
+      this.input.value = JSON.stringify({ sender: "second", type: offer ? "tool.offer" : "tool.call", tool: "dice.roll",
+        ...(offer ? { recipient: "first", text: "Чтобы незаметно пройти мимо стражи, проверьте скрытность." } : {}),
         request_id: crypto.randomUUID(), arguments: { system, roll: definition.roll,
-          success: definition.success } }, null, 2);
+          success: definition.success, ...(offer ? { label: "Скрытность" } : {}) } }, null, 2);
       this.error.hidden = true;
       this.status.hidden = true;
       this.update();
-    });
+    };
+    this.diceExampleButton.addEventListener("click", () => diceExample(false));
+    this.diceOfferButton.addEventListener("click", () => diceExample(true));
     this.newIdButton.addEventListener("click", () => {
       try {
         const payload = this.parse();
@@ -438,6 +498,7 @@ class JsonStub {
     this.input.disabled = !ready || this.busy;
     this.newIdButton.disabled = !ready || this.busy;
     this.diceExampleButton.disabled = !ready || this.busy || !diceCatalog;
+    this.diceOfferButton.disabled = !ready || this.busy || !diceCatalog;
     this.button.disabled = !ready || this.busy || !this.input.value.trim();
   }
 

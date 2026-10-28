@@ -173,6 +173,30 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(json.loads(self.raw_request(path, raw)[1]), reply)
         self.assertEqual(json.loads(self.request(path + "?chat=first")[1])["messages"], messages)
 
+    def test_ai_can_offer_dice_then_player_rolls_once(self) -> None:
+        room = json.loads(self.request("/api/rooms", {})[1])["room_id"]
+        path = f"/api/rooms/{room}"
+        payload = {"sender": "second", "type": "tool.offer", "tool": "dice.roll",
+                   "recipient": "first", "text": "Проверьте скрытность.", "request_id": str(uuid4()),
+                   "arguments": {"system": "d20", "roll": "1d20+5", "success": {"operator": ">=", "target": 15}}}
+        status, body = self.request(path + "/messages", payload)
+        self.assertEqual(status, 201)
+        response = json.loads(body)
+        self.assertNotIn("result", response)
+        offer = response["message"]
+        self.assertEqual(json.loads(self.request(path + "/messages?chat=first")[1])["messages"], [offer])
+        accept = {"sender": "first", "request_id": offer["roll_request_id"], "offer_id": offer["request_id"]}
+        status, body = self.request(path + "/tools/dice", accept)
+        self.assertEqual(status, 201)
+        result = json.loads(body)
+        self.assertEqual(result["result"], 18)
+        self.assertEqual(result["message"]["requested_by"], "first")
+        self.assertEqual(result["message"]["offered_by"], "second")
+        self.assertEqual(json.loads(self.request(path + "/messages", {**accept, "type": "tool.call", "tool": "dice.roll"})[1]), result)
+        history = json.loads(self.request(path + "/messages?chat=second")[1])["messages"]
+        self.assertEqual([event["type"] for event in history], ["tool.offer", "tool.call", "tool.result"])
+        self.assertEqual(self.request(path + "/tools/dice", {**accept, "sender": "second"})[0], 400)
+
     def test_dice_endpoint_and_queue_call_return_the_same_result(self) -> None:
         status, body = self.request("/api/tools/dice")
         self.assertEqual(status, 200)
