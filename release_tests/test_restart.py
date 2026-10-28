@@ -72,7 +72,10 @@ class ReleaseTests(unittest.TestCase):
                 player = request(base, path, {"action": "create_player", "revision": 0,
                                  "data": {"name": "Игрок"}}, str(uuid4()))["entity_id"]
                 actor = request(base, path, {"action": "create_character", "revision": 1,
-                                "data": {"name": "Герой", "player_id": player}}, str(uuid4()))["entity_id"]
+                                "data": {"name": "Герой", "player_id": player,
+                                         "attributes": {"wisdom": 2},
+                                         "sheet": {"values": {"level": 3, "hp_max": 25, "hp_current": 18,
+                                                               "perception_rank": "trained"}}}}, str(uuid4()))["entity_id"]
                 request_id = str(uuid4())
                 item = {"action": "add_item", "revision": 2, "character_id": actor,
                         "data": {"name": "Кинжал", "category": "weapon", "bulk": "L", "state": "held"}}
@@ -87,6 +90,8 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(request(base, path, item, request_id), receipt)
                 self.assertEqual(len(request(base, path)["characters"][0]["items"]), 1)
                 self.assertEqual(state["characters"][0]["summary"]["hands_used"], 1)
+                self.assertEqual(state["characters"][0]["sheet"]["values"]["hp_current"], 18)
+                self.assertEqual(state["characters"][0]["sheet_statistics"]["perception"], 7)
 
     def test_gm_transport_retry_survives_process_restart(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

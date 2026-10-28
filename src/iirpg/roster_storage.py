@@ -4,18 +4,20 @@ import json
 import sqlite3
 from uuid import UUID
 
+from .character_sheet import CharacterRules
 from .roster import InventoryRules, apply_command, integer
 from .storage import ChatStore, MessageConflict
 
 
-def encode(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True)
+def encode(value: object, *, sort_keys: bool = True) -> str:
+    return json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=sort_keys)
 
 
 class RosterStore:
-    def __init__(self, store: ChatStore, rules: InventoryRules) -> None:
+    def __init__(self, store: ChatStore, rules: InventoryRules, character_rules: CharacterRules | None = None) -> None:
         self.store = store
         self.rules = rules
+        self.character_rules = character_rules or CharacterRules.load()
         with store._connection() as connection:
             connection.executescript("""
                 CREATE TABLE IF NOT EXISTS room_rosters (
@@ -53,14 +55,24 @@ class RosterStore:
                     PRIMARY KEY (room_id, request_id)
                 );
             """)
+            connection.execute("BEGIN IMMEDIATE")
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(room_rosters)")}
+            if "character_rules" not in columns:
+                connection.execute("ALTER TABLE room_rosters ADD COLUMN character_rules TEXT")
 
     def _load(self, connection: sqlite3.Connection, room_id: str) -> dict:
         self.store._require_room(connection, room_id)
         connection.execute(
             "INSERT INTO room_rosters (room_id, rules) VALUES (?, ?) ON CONFLICT DO NOTHING",
-            (room_id, encode(self.rules.config)),
+            (room_id, encode(self.rules.config, sort_keys=False)),
+        )
+        connection.execute(
+            "UPDATE room_rosters SET character_rules = ? WHERE room_id = ? AND character_rules IS NULL",
+            (encode(self.character_rules.config, sort_keys=False), room_id),
         )
         roster = connection.execute("SELECT * FROM room_rosters WHERE room_id = ?", (room_id,)).fetchone()
+        sheet_rules = CharacterRules(json.loads(roster["character_rules"]))
+        inventory_rules = InventoryRules(json.loads(roster["rules"]))
         players = [dict(row) for row in connection.execute(
             "SELECT id, name FROM players WHERE room_id = ? ORDER BY rowid", (room_id,),
         )]
@@ -68,11 +80,16 @@ class RosterStore:
             "SELECT id, body FROM characters WHERE room_id = ? ORDER BY rowid", (room_id,),
         )]
         by_id = {character["id"]: character for character in characters}
+        for character in characters:
+            # Existing records gain defaults without duplicating attributes or changing IDs/revisions.
+            character.update(inventory_rules.character(
+                {key: value for key, value in character.items() if key not in ("id", "items")}, players, sheet_rules))
         for row in connection.execute(
             "SELECT * FROM inventory_items WHERE room_id = ? ORDER BY rowid", (room_id,),
         ):
             by_id[row["character_id"]]["items"].append({**json.loads(row["body"]), "id": row["id"]})
         return {"revision": roster["revision"], "rules": json.loads(roster["rules"]),
+                "character_rules": sheet_rules.config,
                 "players": players, "characters": characters}
 
     def read(self, room_id: str) -> dict:
@@ -81,8 +98,10 @@ class RosterStore:
             connection.execute("BEGIN IMMEDIATE")
             state = self._load(connection, room_id)
         rules = InventoryRules(state["rules"])
+        sheet_rules = CharacterRules(state["character_rules"])
         for character in state["characters"]:
             character["summary"] = rules.summary(character)
+            character["sheet_statistics"] = sheet_rules.statistics(character["sheet"], character["attributes"])
         return state
 
     def execute(self, room_id: str, command: dict, request_id: str) -> dict:
@@ -106,7 +125,8 @@ class RosterStore:
             revision = integer(command.get("revision"), "Ревизия", 0, 9223372036854775806)
             if revision != state["revision"]:
                 raise MessageConflict("Данные изменились в другом окне. Обновите список и повторите изменение.")
-            entity_id = apply_command(state, command, InventoryRules(state["rules"]))
+            entity_id = apply_command(state, command, InventoryRules(state["rules"]),
+                                      CharacterRules(state["character_rules"]))
             # Replace only this room's rows within one transaction. Foreign keys also
             # enforce that ownership and inventory never cross room boundaries.
             for table in ("inventory_items", "characters", "players"):

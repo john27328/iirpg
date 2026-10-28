@@ -9,6 +9,7 @@ const element = (tag, className = "", text = "") => {
 const ENTITY_LABELS = {
   room: "Комната", players: "Игроки", characters: "Персонажи", items: "Предметы",
   rules: "Правила инвентаря", subscribers: "Подписчики", tools: "Инструменты и команды",
+  character_rules: "Правила листа персонажа",
 };
 
 export class DebugPanel {

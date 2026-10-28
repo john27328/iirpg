@@ -1,0 +1,258 @@
+{
+  "schema_version": 1,
+  "id": "pf2e-remaster-character",
+  "name": "Pathfinder 2e Remaster",
+  "help": "Здоровье и параметры брони заполняются вручную. Эффекты предметов и состояний учитывайте в поправках. У NPC используются введённые итоговые значения.",
+  "source": "Player Core (2023), pp. 17–29; GM Core (2023), Building Creatures",
+  "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2027",
+  "license": "ORC",
+  "notice": "character-ORC-NOTICE.md",
+  "attributes": {
+    "strength": {
+      "label": "Сила",
+      "min": -5,
+      "max": 20,
+      "default": 0
+    },
+    "dexterity": {
+      "label": "Ловкость",
+      "min": -5,
+      "max": 20,
+      "default": 0
+    },
+    "constitution": {
+      "label": "Телосложение",
+      "min": -5,
+      "max": 20,
+      "default": 0
+    },
+    "intelligence": {
+      "label": "Интеллект",
+      "min": -5,
+      "max": 20,
+      "default": 0
+    },
+    "wisdom": {
+      "label": "Мудрость",
+      "min": -5,
+      "max": 20,
+      "default": 0
+    },
+    "charisma": {
+      "label": "Харизма",
+      "min": -5,
+      "max": 20,
+      "default": 0
+    }
+  },
+  "groups": {
+    "identity": "Общие сведения",
+    "vitals": "Здоровье и передвижение",
+    "defense": "Защита и спасброски",
+    "perception": "Восприятие",
+    "skills": "Навыки",
+    "abilities": "Способности и описание"
+  },
+  "default_profiles": {
+    "pc": "pc",
+    "npc": "npc"
+  },
+  "profiles": {
+    "pc": {
+      "label": "По правилам персонажа игрока",
+      "description": "Модификаторы считаются из характеристик, уровня, владения и введённых поправок. Здоровье и параметры брони заполните по выбранному происхождению, классу и снаряжению.",
+      "kinds": [
+        "pc",
+        "npc"
+      ],
+      "fields": {
+        "level": {"label": "Уровень", "group": "identity", "type": "integer", "min": 1, "max": 20, "default": 1},
+        "ancestry": {"label": "Происхождение", "group": "identity", "type": "text", "max_length": 120, "default": ""},
+        "background": {"label": "Предыстория", "group": "identity", "type": "text", "max_length": 120, "default": ""},
+        "class_name": {"label": "Класс", "group": "identity", "type": "text", "max_length": 120, "default": ""},
+        "hp_max": {"label": "Максимум ОЗ", "group": "vitals", "type": "integer", "min": 0, "max": 100000, "default": 0},
+        "hp_current": {"label": "Текущие ОЗ", "group": "vitals", "type": "integer", "min": 0, "max": 100000, "default": 0},
+        "hp_temporary": {"label": "Временные ОЗ", "group": "vitals", "type": "integer", "min": 0, "max": 100000, "default": 0},
+        "speed": {"label": "Базовая Скорость, футы", "group": "vitals", "type": "integer", "min": 0, "max": 1000, "default": 25},
+        "languages": {"label": "Языки", "group": "identity", "type": "text", "max_length": 500, "default": ""},
+        "senses": {"label": "Особые чувства", "group": "perception", "type": "text", "max_length": 500, "default": ""},
+        "lore_subject": {"label": "Область Знания (Lore)", "group": "skills", "type": "text", "max_length": 120, "default": ""},
+        "defenses": {"label": "Иммунитеты, слабости, сопротивления", "group": "defense", "type": "text", "max_length": 1000, "default": ""},
+        "attacks": {"label": "Удары и урон", "group": "abilities", "type": "text", "max_length": 1000, "default": ""},
+        "abilities": {"label": "Умения и действия", "group": "abilities", "type": "text", "max_length": 1000, "default": ""},
+        "spells": {"label": "Заклинания", "group": "abilities", "type": "text", "max_length": 1000, "default": ""},
+        "description": {"label": "Внешность и описание", "group": "abilities", "type": "text", "max_length": 1000, "default": ""},
+        "hero_points": {"label": "Очки героизма", "group": "vitals", "type": "integer", "min": 0, "max": 3, "default": 1},
+        "key_attribute": {"label": "Ключевая характеристика класса", "group": "identity", "type": "choice", "options": {"strength": "Сила", "dexterity": "Ловкость", "constitution": "Телосложение", "intelligence": "Интеллект", "wisdom": "Мудрость", "charisma": "Харизма"}, "default": "strength"},
+        "armor_rank": {"label": "Владение надетой бронёй", "group": "defense", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "armor_item_bonus": {"label": "Бонус брони к КБ", "group": "defense", "type": "integer", "min": 0, "max": 20, "default": 0, "overview": false},
+        "armor_dex_cap": {"label": "Предел Ловкости брони (20 = без ограничения)", "group": "defense", "type": "integer", "min": -5, "max": 20, "default": 20, "overview": false},
+        "armor_other": {"label": "Прочие поправки к КБ", "group": "defense", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "class_dc_rank": {"label": "Владение КС класса", "group": "defense", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "class_dc_other": {"label": "Прочие поправки к КС класса", "group": "defense", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "perception_rank": {"label": "Восприятие · владение", "group": "perception", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "perception_other": {"label": "Восприятие · прочие поправки", "group": "perception", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "fortitude_rank": {"label": "Стойкость · владение", "group": "defense", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "fortitude_other": {"label": "Стойкость · прочие поправки", "group": "defense", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "reflex_rank": {"label": "Рефлекс · владение", "group": "defense", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "reflex_other": {"label": "Рефлекс · прочие поправки", "group": "defense", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "will_rank": {"label": "Воля · владение", "group": "defense", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "will_other": {"label": "Воля · прочие поправки", "group": "defense", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "acrobatics_rank": {"label": "Акробатика · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "acrobatics_other": {"label": "Акробатика · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "arcana_rank": {"label": "Аркана · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "arcana_other": {"label": "Аркана · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "athletics_rank": {"label": "Атлетика · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "athletics_other": {"label": "Атлетика · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "crafting_rank": {"label": "Ремесло · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "crafting_other": {"label": "Ремесло · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "deception_rank": {"label": "Обман · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "deception_other": {"label": "Обман · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "diplomacy_rank": {"label": "Дипломатия · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "diplomacy_other": {"label": "Дипломатия · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "intimidation_rank": {"label": "Запугивание · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "intimidation_other": {"label": "Запугивание · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "lore_rank": {"label": "Знание (Lore) · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "lore_other": {"label": "Знание (Lore) · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "medicine_rank": {"label": "Медицина · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "medicine_other": {"label": "Медицина · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "nature_rank": {"label": "Природа · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "nature_other": {"label": "Природа · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "occultism_rank": {"label": "Оккультизм · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "occultism_other": {"label": "Оккультизм · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "performance_rank": {"label": "Выступление · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "performance_other": {"label": "Выступление · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "religion_rank": {"label": "Религия · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "religion_other": {"label": "Религия · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "society_rank": {"label": "Общество · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "society_other": {"label": "Общество · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "stealth_rank": {"label": "Скрытность · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "stealth_other": {"label": "Скрытность · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "survival_rank": {"label": "Выживание · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "survival_other": {"label": "Выживание · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false},
+        "thievery_rank": {"label": "Воровство · владение", "group": "skills", "type": "choice", "options": {"untrained": "Нет владения", "trained": "Обучен", "expert": "Эксперт", "master": "Мастер", "legendary": "Легенда"}, "default": "untrained", "overview": false},
+        "thievery_other": {"label": "Воровство · прочие поправки", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0, "overview": false}
+      },
+      "statistics": {
+        "armor_class": {"label": "Класс брони", "group": "defense", "signed": false, "expression": {"add": [10, {"min": [{"ref": "attributes.dexterity"}, {"ref": "sheet.armor_dex_cap"}]}, {"add": [{"lookup": [{"ref": "sheet.armor_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.armor_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.armor_item_bonus"}, {"ref": "sheet.armor_other"}]}},
+        "class_dc": {"label": "КС класса", "group": "defense", "signed": false, "expression": {"add": [10, {"lookup": [{"ref": "sheet.key_attribute"}, {"strength": {"ref": "attributes.strength"}, "dexterity": {"ref": "attributes.dexterity"}, "constitution": {"ref": "attributes.constitution"}, "intelligence": {"ref": "attributes.intelligence"}, "wisdom": {"ref": "attributes.wisdom"}, "charisma": {"ref": "attributes.charisma"}}]}, {"add": [{"lookup": [{"ref": "sheet.class_dc_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.class_dc_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.class_dc_other"}]}},
+        "perception": {"label": "Восприятие", "group": "perception", "signed": true, "expression": {"add": [{"ref": "attributes.wisdom"}, {"add": [{"lookup": [{"ref": "sheet.perception_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.perception_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.perception_other"}]}},
+        "fortitude": {"label": "Стойкость", "group": "defense", "signed": true, "expression": {"add": [{"ref": "attributes.constitution"}, {"add": [{"lookup": [{"ref": "sheet.fortitude_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.fortitude_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.fortitude_other"}]}},
+        "reflex": {"label": "Рефлекс", "group": "defense", "signed": true, "expression": {"add": [{"ref": "attributes.dexterity"}, {"add": [{"lookup": [{"ref": "sheet.reflex_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.reflex_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.reflex_other"}]}},
+        "will": {"label": "Воля", "group": "defense", "signed": true, "expression": {"add": [{"ref": "attributes.wisdom"}, {"add": [{"lookup": [{"ref": "sheet.will_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.will_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.will_other"}]}},
+        "acrobatics": {"label": "Акробатика", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.dexterity"}, {"add": [{"lookup": [{"ref": "sheet.acrobatics_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.acrobatics_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.acrobatics_other"}]}},
+        "arcana": {"label": "Аркана", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.intelligence"}, {"add": [{"lookup": [{"ref": "sheet.arcana_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.arcana_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.arcana_other"}]}},
+        "athletics": {"label": "Атлетика", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.strength"}, {"add": [{"lookup": [{"ref": "sheet.athletics_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.athletics_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.athletics_other"}]}},
+        "crafting": {"label": "Ремесло", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.intelligence"}, {"add": [{"lookup": [{"ref": "sheet.crafting_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.crafting_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.crafting_other"}]}},
+        "deception": {"label": "Обман", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.charisma"}, {"add": [{"lookup": [{"ref": "sheet.deception_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.deception_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.deception_other"}]}},
+        "diplomacy": {"label": "Дипломатия", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.charisma"}, {"add": [{"lookup": [{"ref": "sheet.diplomacy_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.diplomacy_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.diplomacy_other"}]}},
+        "intimidation": {"label": "Запугивание", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.charisma"}, {"add": [{"lookup": [{"ref": "sheet.intimidation_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.intimidation_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.intimidation_other"}]}},
+        "lore": {"label": "Знание (Lore)", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.intelligence"}, {"add": [{"lookup": [{"ref": "sheet.lore_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.lore_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.lore_other"}]}},
+        "medicine": {"label": "Медицина", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.wisdom"}, {"add": [{"lookup": [{"ref": "sheet.medicine_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.medicine_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.medicine_other"}]}},
+        "nature": {"label": "Природа", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.wisdom"}, {"add": [{"lookup": [{"ref": "sheet.nature_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.nature_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.nature_other"}]}},
+        "occultism": {"label": "Оккультизм", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.intelligence"}, {"add": [{"lookup": [{"ref": "sheet.occultism_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.occultism_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.occultism_other"}]}},
+        "performance": {"label": "Выступление", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.charisma"}, {"add": [{"lookup": [{"ref": "sheet.performance_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.performance_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.performance_other"}]}},
+        "religion": {"label": "Религия", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.wisdom"}, {"add": [{"lookup": [{"ref": "sheet.religion_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.religion_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.religion_other"}]}},
+        "society": {"label": "Общество", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.intelligence"}, {"add": [{"lookup": [{"ref": "sheet.society_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.society_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.society_other"}]}},
+        "stealth": {"label": "Скрытность", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.dexterity"}, {"add": [{"lookup": [{"ref": "sheet.stealth_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.stealth_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.stealth_other"}]}},
+        "survival": {"label": "Выживание", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.wisdom"}, {"add": [{"lookup": [{"ref": "sheet.survival_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.survival_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.survival_other"}]}},
+        "thievery": {"label": "Воровство", "group": "skills", "signed": true, "expression": {"add": [{"ref": "attributes.dexterity"}, {"add": [{"lookup": [{"ref": "sheet.thievery_rank"}, {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary": 8}]}, {"if_equal": [{"ref": "sheet.thievery_rank"}, "untrained", 0, {"ref": "sheet.level"}]}]}, {"ref": "sheet.thievery_other"}]}}
+      },
+      "constraints": [
+        {
+          "operator": "<=",
+          "left": {
+            "ref": "sheet.hp_current"
+          },
+          "right": {
+            "ref": "sheet.hp_max"
+          },
+          "message": "Текущие ОЗ не могут превышать максимум ОЗ."
+        }
+      ]
+    },
+    "npc": {
+      "label": "Готовый блок характеристик NPC",
+      "description": "Введите итоговые показатели существа из его блока характеристик. Они не пересчитываются из характеристик или уровня.",
+      "kinds": [
+        "npc"
+      ],
+      "fields": {
+        "level": {"label": "Уровень", "group": "identity", "type": "integer", "min": -1, "max": 25, "default": 1},
+        "ancestry": {"label": "Вид / происхождение", "group": "identity", "type": "text", "max_length": 120, "default": ""},
+        "background": {"label": "Роль в истории", "group": "identity", "type": "text", "max_length": 120, "default": ""},
+        "class_name": {"label": "Класс или архетип (если есть)", "group": "identity", "type": "text", "max_length": 120, "default": ""},
+        "hp_max": {"label": "Максимум ОЗ", "group": "vitals", "type": "integer", "min": 0, "max": 100000, "default": 0},
+        "hp_current": {"label": "Текущие ОЗ", "group": "vitals", "type": "integer", "min": 0, "max": 100000, "default": 0},
+        "hp_temporary": {"label": "Временные ОЗ", "group": "vitals", "type": "integer", "min": 0, "max": 100000, "default": 0},
+        "speed": {"label": "Базовая Скорость, футы", "group": "vitals", "type": "integer", "min": 0, "max": 1000, "default": 25},
+        "languages": {"label": "Языки", "group": "identity", "type": "text", "max_length": 500, "default": ""},
+        "senses": {"label": "Особые чувства", "group": "perception", "type": "text", "max_length": 500, "default": ""},
+        "lore_subject": {"label": "Область Знания (Lore)", "group": "skills", "type": "text", "max_length": 120, "default": ""},
+        "defenses": {"label": "Иммунитеты, слабости, сопротивления", "group": "defense", "type": "text", "max_length": 1000, "default": ""},
+        "attacks": {"label": "Удары и урон", "group": "abilities", "type": "text", "max_length": 1000, "default": ""},
+        "abilities": {"label": "Умения и действия", "group": "abilities", "type": "text", "max_length": 1000, "default": ""},
+        "spells": {"label": "Заклинания", "group": "abilities", "type": "text", "max_length": 1000, "default": ""},
+        "description": {"label": "Внешность и описание", "group": "abilities", "type": "text", "max_length": 1000, "default": ""},
+        "armor_class": {"label": "Класс брони", "group": "defense", "type": "integer", "min": 0, "max": 100, "default": 10},
+        "perception": {"label": "Восприятие · итоговый модификатор", "group": "perception", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "fortitude": {"label": "Стойкость · итоговый модификатор", "group": "defense", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "reflex": {"label": "Рефлекс · итоговый модификатор", "group": "defense", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "will": {"label": "Воля · итоговый модификатор", "group": "defense", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "acrobatics": {"label": "Акробатика · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "arcana": {"label": "Аркана · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "athletics": {"label": "Атлетика · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "crafting": {"label": "Ремесло · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "deception": {"label": "Обман · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "diplomacy": {"label": "Дипломатия · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "intimidation": {"label": "Запугивание · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "lore": {"label": "Знание (Lore) · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "medicine": {"label": "Медицина · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "nature": {"label": "Природа · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "occultism": {"label": "Оккультизм · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "performance": {"label": "Выступление · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "religion": {"label": "Религия · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "society": {"label": "Общество · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "stealth": {"label": "Скрытность · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "survival": {"label": "Выживание · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0},
+        "thievery": {"label": "Воровство · итоговый модификатор", "group": "skills", "type": "integer", "min": -100, "max": 100, "default": 0}
+      },
+      "statistics": {
+        "armor_class": {"label": "Класс брони", "group": "defense", "signed": false, "expression": {"ref": "sheet.armor_class"}},
+        "perception": {"label": "Восприятие", "group": "perception", "signed": true, "expression": {"ref": "sheet.perception"}},
+        "fortitude": {"label": "Стойкость", "group": "defense", "signed": true, "expression": {"ref": "sheet.fortitude"}},
+        "reflex": {"label": "Рефлекс", "group": "defense", "signed": true, "expression": {"ref": "sheet.reflex"}},
+        "will": {"label": "Воля", "group": "defense", "signed": true, "expression": {"ref": "sheet.will"}},
+        "acrobatics": {"label": "Акробатика", "group": "skills", "signed": true, "expression": {"ref": "sheet.acrobatics"}},
+        "arcana": {"label": "Аркана", "group": "skills", "signed": true, "expression": {"ref": "sheet.arcana"}},
+        "athletics": {"label": "Атлетика", "group": "skills", "signed": true, "expression": {"ref": "sheet.athletics"}},
+        "crafting": {"label": "Ремесло", "group": "skills", "signed": true, "expression": {"ref": "sheet.crafting"}},
+        "deception": {"label": "Обман", "group": "skills", "signed": true, "expression": {"ref": "sheet.deception"}},
+        "diplomacy": {"label": "Дипломатия", "group": "skills", "signed": true, "expression": {"ref": "sheet.diplomacy"}},
+        "intimidation": {"label": "Запугивание", "group": "skills", "signed": true, "expression": {"ref": "sheet.intimidation"}},
+        "lore": {"label": "Знание (Lore)", "group": "skills", "signed": true, "expression": {"ref": "sheet.lore"}},
+        "medicine": {"label": "Медицина", "group": "skills", "signed": true, "expression": {"ref": "sheet.medicine"}},
+        "nature": {"label": "Природа", "group": "skills", "signed": true, "expression": {"ref": "sheet.nature"}},
+        "occultism": {"label": "Оккультизм", "group": "skills", "signed": true, "expression": {"ref": "sheet.occultism"}},
+        "performance": {"label": "Выступление", "group": "skills", "signed": true, "expression": {"ref": "sheet.performance"}},
+        "religion": {"label": "Религия", "group": "skills", "signed": true, "expression": {"ref": "sheet.religion"}},
+        "society": {"label": "Общество", "group": "skills", "signed": true, "expression": {"ref": "sheet.society"}},
+        "stealth": {"label": "Скрытность", "group": "skills", "signed": true, "expression": {"ref": "sheet.stealth"}},
+        "survival": {"label": "Выживание", "group": "skills", "signed": true, "expression": {"ref": "sheet.survival"}},
+        "thievery": {"label": "Воровство", "group": "skills", "signed": true, "expression": {"ref": "sheet.thievery"}}
+      },
+      "constraints": [
+        {
+          "operator": "<=",
+          "left": {
+            "ref": "sheet.hp_current"
+          },
+          "right": {
+            "ref": "sheet.hp_max"
+          },
+          "message": "Текущие ОЗ не могут превышать максимум ОЗ."
+        }
+      ]
+    }
+  }
+}

@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 from uuid import uuid4
 
+from .character_sheet import CharacterRules
+
 DEFAULT_INVENTORY_RULES = Path(__file__).with_name("rules") / "inventory_pf2e.json"
 MAX_PLAYERS = 100
 MAX_CHARACTERS = 200
@@ -144,8 +146,11 @@ class InventoryRules:
             raise ValueError("Для использования требуется больше рук, чем есть у персонажа.")
         return item
 
-    def character(self, payload: dict, players: list[dict]) -> dict:
-        fields(payload, {"name", "kind", "player_id", "size", "attributes", "coins", "notes"})
+    def attribute_specs(self, sheet_rules: CharacterRules | None = None) -> dict:
+        return {**(sheet_rules.config["attributes"] if sheet_rules else {}), **self.config["attributes"]}
+
+    def character(self, payload: dict, players: list[dict], sheet_rules: CharacterRules | None = None) -> dict:
+        fields(payload, {"name", "kind", "player_id", "size", "attributes", "coins", "notes", "sheet"})
         kind = member(payload.get("kind", "pc"), {"pc": 1, "npc": 1}, "Тип персонажа")
         player_id = payload.get("player_id")
         if player_id is not None:
@@ -155,18 +160,25 @@ class InventoryRules:
         attributes = payload.get("attributes", {})
         if not isinstance(attributes, dict):
             raise ValueError("Атрибуты должны быть объектом.")
-        fields(attributes, set(self.config["attributes"]))
+        specs = self.attribute_specs(sheet_rules)
+        fields(attributes, set(specs))
         attributes = {
             key: integer(attributes.get(key, spec["default"]), spec["label"], spec["min"], spec["max"])
-            for key, spec in self.config["attributes"].items()
+            for key, spec in specs.items()
         }
         notes = payload.get("notes", "")
         if not isinstance(notes, str) or len(notes) > 2000:
             raise ValueError("Заметки: максимум 2000 символов.")
-        return {"name": name(payload.get("name")), "kind": kind, "player_id": player_id,
+        result = {"name": name(payload.get("name")), "kind": kind, "player_id": player_id,
                 "size": member(payload.get("size", self.config["default_size"]), self.config["sizes"], "Размер"),
                 "attributes": attributes, "coins": integer(payload.get("coins", 0), "Монеты", 0, 10000000),
                 "notes": notes}
+        if sheet_rules:
+            result["sheet"] = sheet_rules.normalize(payload.get("sheet", {}), kind)
+            sheet_rules.statistics(result["sheet"], attributes)
+        elif "sheet" in payload:
+            raise ValueError("Не подключены правила листа персонажа.")
+        return result
 
     def summary(self, character: dict) -> dict:
         c = self.config
@@ -206,7 +218,8 @@ class InventoryRules:
                                    and c["hands"] - used_hands >= item["free_hands"]]}
 
 
-def apply_command(state: dict, command: dict, rules: InventoryRules) -> str:
+def apply_command(state: dict, command: dict, rules: InventoryRules,
+                  sheet_rules: CharacterRules | None = None) -> str:
     """Mutate a transaction-local roster; the storage layer commits only on success."""
     fields(command, {"action", "revision", "id", "character_id", "data"})
     action = command.get("action")
@@ -234,7 +247,7 @@ def apply_command(state: dict, command: dict, rules: InventoryRules) -> str:
     elif action == "create_character":
         if len(state["characters"]) >= MAX_CHARACTERS:
             raise ValueError("Достигнут лимит персонажей комнаты.")
-        character = rules.character(data, state["players"])
+        character = rules.character(data, state["players"], sheet_rules)
         result_id = str(uuid4())
         state["characters"].append({**character, "id": result_id, "items": []})
     elif action in ("update_character", "delete_character"):
@@ -243,7 +256,14 @@ def apply_command(state: dict, command: dict, rules: InventoryRules) -> str:
             state["characters"].remove(character)
         else:
             original = {key: value for key, value in character.items() if key not in ("id", "items")}
-            character.update(rules.character({**original, **data}, state["players"]))
+            if "attributes" in data:
+                if not isinstance(data["attributes"], dict):
+                    raise ValueError("Атрибуты должны быть объектом.")
+                data = {**data, "attributes": {**character["attributes"], **data["attributes"]}}
+            if sheet_rules and "sheet" in data:
+                data = {**data, "sheet": sheet_rules.update(character["sheet"], data["sheet"],
+                                                           data.get("kind", character["kind"]))}
+            character.update(rules.character({**original, **data}, state["players"], sheet_rules))
     elif action in ("add_item", "update_item", "remove_item"):
         character = find(state["characters"], command.get("character_id"))
         if action == "add_item":

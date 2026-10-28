@@ -147,11 +147,39 @@ class ServerTests(unittest.TestCase):
 
     def test_inventory_assets_and_license_are_served(self) -> None:
         for path, marker in [("/inventory.js", b"class InventoryPanel"),
+                             ("/character-sheet.js", b"class CharacterSheetWindow"),
+                             ("/character-ORC-NOTICE.md", b"Attribution Notice"),
                              ("/inventory-ORC-NOTICE.md", b"Attribution Notice"),
                              ("/inventory-LICENSE-ORC.pdf", b"%PDF")]:
             status, body = self.request(path)
             self.assertEqual(status, 200)
             self.assertIn(marker, body)
+
+    def test_character_sheet_http_updates_and_returns_calculated_statistics(self) -> None:
+        room = json.loads(self.request("/api/rooms", {})[1])["room_id"]
+        path = f"/api/rooms/{room}/roster"
+        payload = {"action": "create_character", "revision": 0,
+                   "data": {"name": "Герой", "attributes": {"wisdom": 3}, "sheet": {"values": {
+                       "level": 4, "perception_rank": "trained", "hp_max": 30, "hp_current": 25,
+                   }}}}
+        self.assertEqual(self.request(path, payload, {"Idempotency-Key": str(uuid4())})[0], 200)
+        state = json.loads(self.request(path)[1])
+        self.assertEqual(state["character_rules"]["default_profiles"]["npc"], "npc")
+        actor = state["characters"][0]
+        self.assertEqual(actor["sheet_statistics"]["perception"], 9)
+        invalid = {"action": "update_character", "revision": 1, "id": actor["id"],
+                   "data": {"sheet": {"values": {"hp_current": 31}}}}
+        self.assertEqual(self.request(path, invalid, {"Idempotency-Key": str(uuid4())})[0], 400)
+        self.assertEqual(json.loads(self.request(path)[1]), state)
+        debug = json.loads(self.request(f"/api/rooms/{room}/debug")[1])
+        self.assertEqual(debug["entities"]["character_rules"], state["character_rules"])
+        self.assertEqual(debug["entities"]["characters"][0]["sheet_statistics"]["perception"], 9)
+        # A filled sheet can exceed the old 16 KiB transport limit in UTF-8 or escaped JSON.
+        description = {key: "Я" * 1000 for key in ("attacks", "abilities", "spells", "description", "defenses")}
+        update = {"action": "update_character", "revision": 1, "id": actor["id"],
+                  "data": {"sheet": {"values": description}}}
+        self.assertEqual(self.request(path, update, {"Idempotency-Key": str(uuid4())})[0], 200)
+        self.assertEqual(json.loads(self.request(path)[1])["characters"][0]["sheet"]["values"]["description"], "Я" * 1000)
 
     def test_restricted_message_never_appears_in_other_subscriber_response(self) -> None:
         room = json.loads(self.request("/api/rooms", {})[1])["room_id"]

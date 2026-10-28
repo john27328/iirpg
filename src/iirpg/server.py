@@ -10,6 +10,7 @@ import secrets
 from urllib.parse import parse_qs, urlsplit
 
 from .application import ChatService
+from .character_sheet import DEFAULT_CHARACTER_RULES, CharacterRules
 from .commands import describe_commands
 from .dice import DEFAULT_RULES, DiceTool
 from .debug import inspect_room
@@ -23,7 +24,7 @@ DICE_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/tools/dice\Z")
 COMMAND_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/gm/commands\Z")
 ROSTER_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/roster\Z")
 DEBUG_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/debug\Z")
-MAX_BODY_SIZE = 16384
+MAX_BODY_SIZE = 65536
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/debug": ("debug.html", "text/html; charset=utf-8"),
@@ -32,10 +33,12 @@ STATIC_FILES = {
     "/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/inventory.js": ("inventory.js", "text/javascript; charset=utf-8"),
     "/debug.js": ("debug.js", "text/javascript; charset=utf-8"),
+    "/character-sheet.js": ("character-sheet.js", "text/javascript; charset=utf-8"),
 }
 RULE_FILES = {
     "/inventory-ORC-NOTICE.md": ("inventory-ORC-NOTICE.md", "text/plain; charset=utf-8"),
     "/inventory-LICENSE-ORC.pdf": ("LICENSE-ORC.pdf", "application/pdf"),
+    "/character-ORC-NOTICE.md": ("character-ORC-NOTICE.md", "text/plain; charset=utf-8"),
 }
 
 
@@ -43,9 +46,10 @@ class ChatHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, address: tuple[str, int], database: Path, access_token: str = "",
-                 dice: DiceTool | None = None, inventory_rules: InventoryRules | None = None) -> None:
+                 dice: DiceTool | None = None, inventory_rules: InventoryRules | None = None,
+                 character_rules: CharacterRules | None = None) -> None:
         self.service = ChatService(ChatStore(database), dice)
-        self.roster = RosterStore(self.service.store, inventory_rules or InventoryRules.load())
+        self.roster = RosterStore(self.service.store, inventory_rules or InventoryRules.load(), character_rules)
         self.access_token = access_token
         super().__init__(address, ChatHandler)
 
@@ -215,6 +219,8 @@ def main() -> None:
                         help="JSON file defining dice system formats")
     parser.add_argument("--inventory-rules", type=Path, default=DEFAULT_INVENTORY_RULES,
                         help="Inventory configuration saved for each room on first roster access")
+    parser.add_argument("--character-rules", type=Path, default=DEFAULT_CHARACTER_RULES,
+                        help="Character sheet fields, profiles and formulas saved per room")
     parser.add_argument("--access-token-file", type=Path,
                         help="Require a bearer token from this file for all chat API requests")
     arguments = parser.parse_args()
@@ -224,7 +230,8 @@ def main() -> None:
         if len(token) < 32:
             parser.error("The access token must contain at least 32 characters.")
     with ChatHTTPServer((arguments.host, arguments.port), arguments.database, token,
-                        DiceTool(arguments.dice_rules), InventoryRules.load(arguments.inventory_rules)) as server:
+                        DiceTool(arguments.dice_rules), InventoryRules.load(arguments.inventory_rules),
+                        CharacterRules.load(arguments.character_rules)) as server:
         print(f"IIRPG Chat: http://{arguments.host}:{server.server_port}", flush=True)
         try:
             server.serve_forever()

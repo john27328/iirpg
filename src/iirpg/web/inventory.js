@@ -1,4 +1,6 @@
 /* Inventory UI reads states, categories, limits and attributes from room rules. */
+import { CharacterSheetWindow } from "/character-sheet.js";
+
 const $ = (selector, root) => root.querySelector(selector);
 const node = (tag, className = "", text = "") => {
   const element = document.createElement(tag);
@@ -26,6 +28,7 @@ export class InventoryPanel {
       <div class="roster-filters" role="group" aria-label="Тип персонажа"></div><div class="roster-list"></div></aside>
       <div class="character-detail"></div></div>
       <p class="inventory-footnote">Учет снаряжения для маленьких и средних существ. <a href="/inventory-ORC-NOTICE.md" target="_blank" rel="noopener">Правила и лицензия ORC</a></p>
+      <dialog class="sheet-dialog" aria-label="Лист персонажа"></dialog>
       <dialog class="players-dialog"><form class="player-form"><h3>Игроки комнаты</h3><p class="muted">Игрок может владеть несколькими персонажами.</p><label>Имя игрока<input name="name" required maxlength="120"></label><div class="dialog-actions"><button type="submit" class="button-secondary">Добавить игрока</button><button type="button" class="button-secondary close-dialog">Закрыть</button></div></form><div class="players-list"></div></dialog>
       <dialog class="character-dialog"><form class="character-form"><h3>Персонаж</h3><input name="id" type="hidden"><div class="inventory-form-grid">
       <label>Имя<input name="name" required maxlength="120"></label><label>Тип<select name="kind"><option value="pc">Персонаж игрока</option><option value="npc">NPC</option></select></label>
@@ -45,6 +48,8 @@ export class InventoryPanel {
     this.playerForm = $(".player-form", root);
     this.characterForm = $(".character-form", root);
     this.itemForm = $(".item-form", root);
+    this.sheetWindow = new CharacterSheetWindow($(".sheet-dialog", root), () => this.state,
+      (id, data) => this.mutate("update_character", data, { id }), () => this.update());
     root.querySelectorAll(".close-dialog").forEach((element) => element.addEventListener("click", () => element.closest("dialog").close()));
     for (const [key, label] of [["all", "Все"], ["pc", "Игроки"], ["npc", "NPC"]]) {
       const control = button(label, () => { this.filter = key; this.renderList(); }, "roster-filter");
@@ -72,7 +77,7 @@ export class InventoryPanel {
     this.characterForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = this.characterForm.elements;
-      const attributes = Object.fromEntries(Object.keys(this.state.rules.attributes).map((key) => [key, Number(form[`attribute-${key}`].value)]));
+      const attributes = Object.fromEntries(Object.keys(this.attributeSpecs()).map((key) => [key, Number(form[`attribute-${key}`].value)]));
       const data = { name: form.name.value, kind: form.kind.value, player_id: form.kind.value === "pc" ? form.player_id.value || null : null,
         size: form.size.value, coins: Number(form.coins.value), notes: form.notes.value, attributes };
       if (await this.mutate(form.id.value ? "update_character" : "create_character", data, { id: form.id.value || undefined }, true)) {
@@ -111,10 +116,13 @@ export class InventoryPanel {
   update() {
     const disabled = !this.context().ready || !this.state || this.busy;
     this.root.querySelectorAll("button, input, select, textarea").forEach((control) => { control.disabled = disabled; });
+    this.sheetWindow.update(disabled);
     if (!disabled) { this.updateOwner(); this.updateGrip(); }
   }
 
-  hasDraft() { return Boolean($("dialog[open]", this.root)); }
+  hasDraft() { return this.sheetWindow.editing || Boolean($("dialog[open]:not(.sheet-dialog)", this.root)); }
+
+  attributeSpecs() { return { ...this.state.character_rules.attributes, ...this.state.rules.attributes }; }
 
   reset(state) {
     this.root.querySelectorAll("dialog[open]").forEach((dialog) => dialog.close());
@@ -182,6 +190,7 @@ export class InventoryPanel {
     if (!this.state.characters.some((entry) => entry.id === this.selected)) this.selected = this.state.characters[0]?.id || null;
     this.renderList();
     this.renderDetail();
+    if (this.sheetWindow.dialog.open) this.sheetWindow.sync();
     this.update();
   }
 
@@ -214,7 +223,7 @@ export class InventoryPanel {
     const owner = this.state.players.find((player) => player.id === actor.player_id)?.name;
     title.append(node("span", "eyebrow", actor.kind === "npc" ? "NPC" : `ПЕРСОНАЖ ИГРОКА${owner ? ` · ${owner}` : ""}`), node("h3", "", actor.name));
     const actions = node("div", "inventory-actions");
-    actions.append(button("Изменить", () => this.editCharacter(actor)), button("Удалить", async () => {
+    actions.append(button("Лист персонажа", () => { this.error.hidden = true; this.sheetWindow.open(actor.id); }), button("Изменить", () => this.editCharacter(actor)), button("Удалить", async () => {
       if (confirm(`Удалить персонажа «${actor.name}» и все его предметы?`)) await this.mutate("delete_character", {}, { id: actor.id });
     }));
     header.append(title, actions);
@@ -293,7 +302,7 @@ export class InventoryPanel {
     size.value = this.state.rules.default_size;
     const attributes = $(".attribute-fields", form);
     attributes.replaceChildren();
-    for (const [key, spec] of Object.entries(this.state.rules.attributes)) {
+    for (const [key, spec] of Object.entries(this.attributeSpecs())) {
       const label = node("label", "", spec.label);
       const input = node("input");
       Object.assign(input, { name: `attribute-${key}`, type: "number", min: spec.min, max: spec.max, step: "1", required: true, value: actor?.attributes[key] ?? spec.default });
