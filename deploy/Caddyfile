@@ -1,0 +1,16 @@
+{
+	admin 127.0.0.1:2019
+	storage file_system {
+		root /var/lib/iirpg-caddy
+	}
+}
+
+https://{$IIRPG_PUBLIC_IP} {
+	tls {
+		issuer acme {
+			dir https://acme-v02.api.letsencrypt.org/directory
+			profile shortlived
+		}
+	}
+	reverse_proxy 127.0.0.1:8000
+}

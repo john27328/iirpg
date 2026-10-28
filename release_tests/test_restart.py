@@ -52,6 +52,33 @@ def running_server(directory: Path):
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_gm_transport_retry_survives_process_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            token = secrets.token_urlsafe(32)
+            (directory / "access-token").write_text(token)
+            operation = str(uuid4())
+            command = {"action": "roll", "roll": "1d20+5", "target": 15}
+
+            def request(base, path, payload=None, key=None):
+                data = None if payload is None else json.dumps(payload).encode()
+                headers = {"Content-Type": "application/json", "Authorization": "Bearer " + token}
+                if key:
+                    headers["Idempotency-Key"] = key
+                with urlopen(Request(base + path, data=data, headers=headers), timeout=5) as response:
+                    return json.load(response)
+
+            with running_server(directory) as base:
+                room = request(base, "/api/rooms", {})["room_id"]
+                path = f"/api/rooms/{room}/gm/commands"
+                result = request(base, path, command, operation)
+                history = request(base, f"/api/rooms/{room}/messages?chat=second")["messages"]
+                self.assertEqual(len(history), 2)
+
+            with running_server(directory) as base:
+                self.assertEqual(request(base, path, command, operation), result)
+                self.assertEqual(request(base, f"/api/rooms/{room}/messages?chat=second")["messages"], history)
+
     def test_dice_offer_waits_for_player_across_process_restarts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

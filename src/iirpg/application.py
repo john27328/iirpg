@@ -2,6 +2,7 @@
 
 from uuid import UUID, uuid5
 
+from .commands import command_payload
 from .dice import SYMBOLS, DiceTool
 from .domain import Chat, Visibility
 from .storage import ChatStore
@@ -36,6 +37,9 @@ class ChatService:
         page = self.store.page(room_id, after)
         chat = self.chats[chat_id]
         return {**page, "messages": [message for message in page["messages"] if chat.can_see(message)]}
+
+    def send_command(self, room_id: str, command: dict, request_id: str) -> dict:
+        return self.send(room_id, command_payload(command, request_id))
 
     def send(self, room_id: str, payload: dict) -> dict:
         sender = payload.get("sender")

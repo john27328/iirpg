@@ -10,12 +10,14 @@ import secrets
 from urllib.parse import parse_qs, urlsplit
 
 from .application import ChatService
+from .commands import describe_commands
 from .dice import DEFAULT_RULES, DiceTool
 from .storage import ChatStore, MessageConflict
 
 WEB_ROOT = Path(__file__).with_name("web")
 ROOM_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/messages\Z")
 DICE_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/tools/dice\Z")
+COMMAND_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/gm/commands\Z")
 MAX_BODY_SIZE = 16384
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -109,6 +111,17 @@ class ChatHandler(BaseHTTPRequestHandler):
             return
         if method == "GET" and route.path == "/api/tools/dice":
             self._json(200, self.server.service.dice.describe())
+            return
+        if method == "GET" and route.path == "/api/gm/commands":
+            self._json(200, describe_commands())
+            return
+        command_match = COMMAND_ROUTE.fullmatch(route.path)
+        if method == "POST" and command_match:
+            request_id = self.headers.get("Idempotency-Key")
+            if not request_id:
+                raise ValueError("Нужен служебный заголовок Idempotency-Key; клиент добавляет его автоматически.")
+            message = self.server.service.send_command(command_match.group(1), self._body(), request_id)
+            self._json(201, self._message_response(message))
             return
         dice_match = DICE_ROUTE.fullmatch(route.path)
         if method == "POST" and dice_match:

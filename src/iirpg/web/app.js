@@ -13,6 +13,15 @@ let accessToken = "";
 let diceCatalog = null;
 const accessGate = $("#access-gate");
 
+function createRequestId() {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 function readFragment() {
   const hash = location.hash.slice(1);
   return roomPattern.test(hash) ? new URLSearchParams({ room: hash }) : new URLSearchParams(hash);
@@ -344,7 +353,7 @@ class Chat {
       ? { mode: "selected", chat_ids: [this.key] }
       : { mode: "all", chat_ids: [] };
     if (!this.retry || this.retry.text !== text || JSON.stringify(this.retry.visibility) !== JSON.stringify(visibility)) {
-      this.retry = { sender: this.key, type: "chat.message", text, visibility, metadata: {}, request_id: crypto.randomUUID() };
+      this.retry = { sender: this.key, type: "chat.message", text, visibility, metadata: {}, request_id: createRequestId() };
     }
     this.busy = true;
     this.error.hidden = true;
@@ -425,7 +434,7 @@ class Chat {
     const visibility = this.audience.value === "self" ? { mode: "selected", chat_ids: [this.key] } : { mode: "all", chat_ids: [] };
     const signature = JSON.stringify({ arguments: arguments_, visibility });
     if (this.diceRetry?.signature !== signature) {
-      this.diceRetry = { signature, payload: { sender: this.key, request_id: crypto.randomUUID(), arguments: arguments_, visibility } };
+      this.diceRetry = { signature, payload: { sender: this.key, request_id: createRequestId(), arguments: arguments_, visibility } };
     }
     const epoch = generation;
     const targetRoom = room;
@@ -460,17 +469,29 @@ class JsonStub {
     this.newIdButton = $(".json-renew-id", this.element);
     this.diceExampleButton = $(".json-dice-example", this.element);
     this.diceOfferButton = $(".json-dice-offer", this.element);
+    this.modeSelect = $(".json-mode", this.element);
+    this.mode = this.modeSelect.value;
     this.error = $(".form-error", this.element);
     this.status = $(".json-status", this.element);
     this.reset();
     this.input.addEventListener("input", () => this.update());
+    this.modeSelect.addEventListener("change", () => this.switchMode());
     const diceExample = (offer) => {
       const system = diceCatalog.systems.d20 ? "d20" : Object.keys(diceCatalog.systems)[0];
       const definition = diceCatalog.systems[system];
-      this.input.value = JSON.stringify({ sender: "second", type: offer ? "tool.offer" : "tool.call", tool: "dice.roll",
+      const payload = this.mode === "command" ? {
+        action: offer ? "offer_roll" : "roll",
+        ...(offer ? { text: "Чтобы незаметно пройти мимо стражи, проверьте скрытность.", label: "Скрытность" } : {}),
+        roll: definition.roll, target: definition.success.target,
+        ...(definition.success.operator !== ">=" ? { operator: definition.success.operator } : {}),
+        ...(system !== "d20" ? { system } : {}),
+      } : { sender: "second", type: offer ? "tool.offer" : "tool.call", tool: "dice.roll",
         ...(offer ? { recipient: "first", text: "Чтобы незаметно пройти мимо стражи, проверьте скрытность." } : {}),
-        request_id: crypto.randomUUID(), arguments: { system, roll: definition.roll,
-          success: definition.success, ...(offer ? { label: "Скрытность" } : {}) } }, null, 2);
+        request_id: createRequestId(), arguments: { system, roll: definition.roll,
+          success: definition.success, ...(offer ? { label: "Скрытность" } : {}) } };
+      this.input.value = JSON.stringify(payload, null, 2);
+      this.commandRetry = null;
+      this.initialRaw = "";
       this.error.hidden = true;
       this.status.hidden = true;
       this.update();
@@ -479,9 +500,15 @@ class JsonStub {
     this.diceOfferButton.addEventListener("click", () => diceExample(true));
     this.newIdButton.addEventListener("click", () => {
       try {
-        const payload = this.parse();
-        payload.request_id = crypto.randomUUID();
-        this.input.value = JSON.stringify(payload, null, 2);
+        if (this.mode === "command") {
+          this.parse();
+          this.commandRetry = null;
+          this.initialRaw = "";
+        } else {
+          const payload = this.parse();
+          payload.request_id = createRequestId();
+          this.input.value = JSON.stringify(payload, null, 2);
+        }
         this.error.hidden = true;
         this.status.hidden = true;
         this.update();
@@ -499,23 +526,54 @@ class JsonStub {
     this.newIdButton.disabled = !ready || this.busy;
     this.diceExampleButton.disabled = !ready || this.busy || !diceCatalog;
     this.diceOfferButton.disabled = !ready || this.busy || !diceCatalog;
+    this.modeSelect.disabled = !ready || this.busy;
+    this.newIdButton.textContent = this.mode === "command" ? "Новая отправка" : "Новый request_id";
+    this.newIdButton.title = this.mode === "command" ? "Отправить текущую команду как новую" : "Изменить только request_id";
+    $("#json-hint", this.element).textContent = this.mode === "command"
+      ? "Служебные ID добавляются автоматически. Для новой записи нажмите «Новая отправка»."
+      : "Объект отправляется как введён. Повтор с тем же ID не создаёт дубль.";
     this.button.disabled = !ready || this.busy || !this.input.value.trim();
   }
 
-  hasDraft() { return this.input.value !== this.initialRaw; }
+  hasDraft() {
+    return this.input.value !== this.initialRaw || Object.entries(this.drafts).some(
+      ([mode, draft]) => mode !== this.mode && draft.raw !== draft.initialRaw,
+    );
+  }
+
+  switchMode() {
+    this.drafts[this.mode] = { raw: this.input.value, initialRaw: this.initialRaw, retry: this.commandRetry };
+    this.mode = this.modeSelect.value;
+    this.loadDraft();
+    this.error.hidden = true;
+    this.status.hidden = true;
+  }
+
+  loadDraft() {
+    const draft = this.drafts[this.mode];
+    this.input.value = draft.raw;
+    this.initialRaw = draft.initialRaw;
+    this.commandRetry = draft.retry;
+    this.update();
+  }
 
   reset() {
     this.cursor = 0;
     this.hasMore = false;
     this.ids = new Set();
     this.busy = false;
-    this.initialRaw = JSON.stringify({
-      sender: "second", type: "chat.message", request_id: crypto.randomUUID(),
+    const command = { action: "say", text: "Перед вами закрытая дверь. Что будете делать?",
+      choices: ["Осмотреться", "Открыть дверь", "Уйти"] };
+    const raw = JSON.stringify({
+      sender: "second", type: "chat.message", request_id: createRequestId(),
       text: "Перед вами закрытая дверь. Что будете делать?",
       choices: ["Осмотреться", "Открыть дверь", "Уйти"],
       visibility: { mode: "all", chat_ids: [] }, metadata: {},
     }, null, 2);
-    this.input.value = this.initialRaw;
+    this.drafts = Object.fromEntries(Object.entries({ command: JSON.stringify(command, null, 2), raw }).map(
+      ([mode, value]) => [mode, { raw: value, initialRaw: value, retry: null }],
+    ));
+    this.loadDraft();
     this.error.hidden = true;
     this.status.hidden = true;
     this.list.replaceChildren($(".empty-state", $("#json-stub-template").content).cloneNode(true));
@@ -566,17 +624,30 @@ class JsonStub {
     if (!ready || this.busy) return;
     this.error.hidden = true;
     this.status.hidden = true;
-    try { this.parse(); } catch (error) { this.showError(error); return; }
+    let payload;
+    try { payload = this.parse(); } catch (error) { this.showError(error); return; }
     const raw = this.input.value;
     const epoch = generation;
     const targetRoom = room;
+    const commandMode = this.mode === "command";
+    if (commandMode) {
+      const signature = JSON.stringify(payload);
+      if (!this.commandRetry || this.commandRetry.room !== targetRoom || this.commandRetry.signature !== signature) {
+        this.commandRetry = { room: targetRoom, signature, key: createRequestId() };
+      }
+    }
     this.busy = true;
     this.update();
     try {
-      const result = await request(`/api/rooms/${targetRoom}/messages`, { method: "POST", body: raw });
+      const path = commandMode ? "gm/commands" : "messages";
+      const result = await request(`/api/rooms/${targetRoom}/${path}`, { method: "POST", body: raw,
+        ...(commandMode ? { headers: { "Idempotency-Key": this.commandRetry.key } } : {}),
+      });
       if (epoch !== generation) return;
       this.initialRaw = raw;
-      this.status.textContent = `Запись #${result.message.id} принята. Для нового сообщения смените request_id.`;
+      this.status.textContent = commandMode
+        ? `Запись #${result.message.id} принята. Повтор безопасен; для новой записи нажмите «Новая отправка».`
+        : `Запись #${result.message.id} принята. Для нового сообщения смените request_id.`;
       this.status.hidden = false;
       setConnection(true);
       try { await refreshChats(targetRoom, epoch); } catch {

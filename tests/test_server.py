@@ -31,12 +31,12 @@ class ServerTests(unittest.TestCase):
         cls.worker.join()
         cls.directory.cleanup()
 
-    def request(self, path: str, payload: object = None) -> tuple[int, bytes]:
+    def request(self, path: str, payload: object = None, headers: dict | None = None) -> tuple[int, bytes]:
         data = None if payload is None else json.dumps(payload).encode()
-        return self.raw_request(path, data)
+        return self.raw_request(path, data, headers)
 
-    def raw_request(self, path: str, data: bytes | None = None) -> tuple[int, bytes]:
-        request = Request(self.base + path, data=data, headers={"Content-Type": "application/json"})
+    def raw_request(self, path: str, data: bytes | None = None, headers: dict | None = None) -> tuple[int, bytes]:
+        request = Request(self.base + path, data=data, headers={"Content-Type": "application/json", **(headers or {})})
         try:
             response = urlopen(request, timeout=5)
         except HTTPError as error:
@@ -197,6 +197,25 @@ class ServerTests(unittest.TestCase):
         self.assertEqual([event["type"] for event in history], ["tool.offer", "tool.call", "tool.result"])
         self.assertEqual(self.request(path + "/tools/dice", {**accept, "sender": "second"})[0], 400)
 
+    def test_gm_command_body_has_no_queue_identifiers(self) -> None:
+        self.assertEqual(self.request("/api/gm/commands")[0], 200)
+        room = json.loads(self.request("/api/rooms", {})[1])["room_id"]
+        path = f"/api/rooms/{room}/gm/commands"
+        headers = {"Idempotency-Key": str(uuid4())}
+        command = {"action": "offer_roll", "text": "Проверь скрытность.", "roll": "1d20+5", "target": 15}
+        self.assertEqual(self.request(path, command)[0], 400)
+        self.assertEqual(self.request(path, command, {"Idempotency-Key": "invalid"})[0], 400)
+        status, body = self.request(path, command, headers)
+        self.assertEqual(status, 201)
+        offer = json.loads(body)["message"]
+        self.assertEqual(offer["sender"], "second")
+        self.assertEqual(offer["recipient"], "first")
+        self.assertEqual(offer["request_id"], headers["Idempotency-Key"])
+        self.assertEqual(json.loads(self.request(path, command, headers)[1])["message"], offer)
+        self.assertEqual(self.request(path, {**command, "target": 20}, headers)[0], 409)
+        self.assertEqual(self.request(path, {**command, "request_id": str(uuid4())}, headers)[0], 400)
+        self.assertEqual(json.loads(self.request(f"/api/rooms/{room}/messages?chat=first")[1])["messages"], [offer])
+
     def test_dice_endpoint_and_queue_call_return_the_same_result(self) -> None:
         status, body = self.request("/api/tools/dice")
         self.assertEqual(status, 200)
@@ -251,10 +270,12 @@ class AccessTests(unittest.TestCase):
                 self.assertEqual(request("/api/rooms", payload={})[0], 401)
                 self.assertEqual(request("/api/rooms", "wrong", {})[0], 401)
                 self.assertEqual(request("/api/tools/dice")[0], 401)
+                self.assertEqual(request("/api/gm/commands")[0], 401)
                 self.assertEqual(request("/api/tools/dice", token)[0], 200)
                 status, created = request("/api/rooms", token, {})
                 self.assertEqual(status, 201)
                 path = f"/api/rooms/{created['room_id']}/messages"
+                self.assertEqual(request(f"/api/rooms/{created['room_id']}/gm/commands", payload={"text": "Hello"})[0], 401)
                 self.assertEqual(request(f"/api/rooms/{created['room_id']}/tools/dice", payload={})[0], 401)
                 self.assertEqual(request(path, token, {
                     "sender": "first", "text": "Protected history", "request_id": str(uuid4()),
