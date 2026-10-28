@@ -92,6 +92,26 @@ class ChatStore:
                 "next_cursor": batch[-1]["id"] if batch else after,
                 "has_more": len(rows) > PAGE_SIZE}
 
+    def inspect_page(self, room_id: str, after: int = 0) -> dict:
+        """Administrative view of a room and its unfiltered, paginated queue."""
+        with self._connection() as connection:
+            connection.execute("BEGIN")
+            self._require_room(connection, room_id)
+            room = dict(connection.execute("SELECT * FROM rooms WHERE id = ?", (room_id,)).fetchone())
+            rows = connection.execute(
+                "SELECT id, room_id, request_id, envelope FROM queue_events "
+                "WHERE room_id = ? AND id > ? ORDER BY id LIMIT ?", (room_id, after, PAGE_SIZE + 1),
+            ).fetchall()
+            counts = {row["event_type"]: row["total"] for row in connection.execute(
+                "SELECT json_extract(envelope, '$.type') AS event_type, COUNT(*) AS total "
+                "FROM queue_events WHERE room_id = ? GROUP BY event_type", (room_id,),
+            )}
+        batch = rows[:PAGE_SIZE]
+        return {"room": room, "queue_counts": counts,
+                "queue": {"messages": [self._decode(row) for row in batch],
+                          "next_cursor": batch[-1]["id"] if batch else after,
+                          "has_more": len(rows) > PAGE_SIZE}}
+
     def append(self, room_id: str, request_id: str, message: Message) -> dict:
         return self.append_event(room_id, request_id, message.to_dict())
 

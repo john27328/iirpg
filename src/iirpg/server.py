@@ -12,17 +12,30 @@ from urllib.parse import parse_qs, urlsplit
 from .application import ChatService
 from .commands import describe_commands
 from .dice import DEFAULT_RULES, DiceTool
+from .debug import inspect_room
+from .roster import DEFAULT_INVENTORY_RULES, InventoryRules
+from .roster_storage import RosterStore
 from .storage import ChatStore, MessageConflict
 
 WEB_ROOT = Path(__file__).with_name("web")
 ROOM_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/messages\Z")
 DICE_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/tools/dice\Z")
 COMMAND_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/gm/commands\Z")
+ROSTER_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/roster\Z")
+DEBUG_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/debug\Z")
 MAX_BODY_SIZE = 16384
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
+    "/debug": ("debug.html", "text/html; charset=utf-8"),
+    "/debug/": ("debug.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/styles.css": ("styles.css", "text/css; charset=utf-8"),
+    "/inventory.js": ("inventory.js", "text/javascript; charset=utf-8"),
+    "/debug.js": ("debug.js", "text/javascript; charset=utf-8"),
+}
+RULE_FILES = {
+    "/inventory-ORC-NOTICE.md": ("inventory-ORC-NOTICE.md", "text/plain; charset=utf-8"),
+    "/inventory-LICENSE-ORC.pdf": ("LICENSE-ORC.pdf", "application/pdf"),
 }
 
 
@@ -30,8 +43,9 @@ class ChatHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, address: tuple[str, int], database: Path, access_token: str = "",
-                 dice: DiceTool | None = None) -> None:
+                 dice: DiceTool | None = None, inventory_rules: InventoryRules | None = None) -> None:
         self.service = ChatService(ChatStore(database), dice)
+        self.roster = RosterStore(self.service.store, inventory_rules or InventoryRules.load())
         self.access_token = access_token
         super().__init__(address, ChatHandler)
 
@@ -90,11 +104,22 @@ class ChatHandler(BaseHTTPRequestHandler):
                              "success": message["tool_result"]["success"]})
         return response
 
+    @staticmethod
+    def _cursor(query_string: str) -> int:
+        after = int(parse_qs(query_string).get("after", ["0"])[0])
+        if not 0 <= after <= 9223372036854775807:
+            raise ValueError("Некорректный указатель истории.")
+        return after
+
     def _dispatch(self, method: str) -> None:
         route = urlsplit(self.path)
         if method == "GET" and route.path in STATIC_FILES:
             filename, content_type = STATIC_FILES[route.path]
             self._respond(200, (WEB_ROOT / filename).read_bytes(), content_type)
+            return
+        if method == "GET" and route.path in RULE_FILES:
+            filename, content_type = RULE_FILES[route.path]
+            self._respond(200, (DEFAULT_INVENTORY_RULES.parent / filename).read_bytes(), content_type)
             return
         if method == "GET" and route.path == "/health":
             self._json(200, {"status": "ok"})
@@ -115,6 +140,20 @@ class ChatHandler(BaseHTTPRequestHandler):
         if method == "GET" and route.path == "/api/gm/commands":
             self._json(200, describe_commands())
             return
+        debug_match = DEBUG_ROUTE.fullmatch(route.path)
+        if method == "GET" and debug_match:
+            self._json(200, inspect_room(self.server.service, self.server.roster,
+                                        debug_match.group(1), self._cursor(route.query)))
+            return
+        roster_match = ROSTER_ROUTE.fullmatch(route.path)
+        if roster_match:
+            if method == "GET":
+                self._json(200, self.server.roster.read(roster_match.group(1)))
+                return
+            if method == "POST":
+                self._json(200, self.server.roster.execute(
+                    roster_match.group(1), self._body(), self.headers.get("Idempotency-Key", "")))
+                return
         command_match = COMMAND_ROUTE.fullmatch(route.path)
         if method == "POST" and command_match:
             request_id = self.headers.get("Idempotency-Key")
@@ -134,9 +173,7 @@ class ChatHandler(BaseHTTPRequestHandler):
             room_id = match.group(1)
             if method == "GET":
                 query = parse_qs(route.query)
-                after = int(query.get("after", ["0"])[0])
-                if not 0 <= after <= 9223372036854775807:
-                    raise ValueError("Некорректный указатель истории.")
+                after = self._cursor(route.query)
                 page = self.server.service.messages(room_id, query.get("chat", [""])[0], after)
                 self._json(200, page)
                 return
@@ -176,6 +213,8 @@ def main() -> None:
     parser.add_argument("--database", type=Path, default=Path(".local/chat.sqlite3"))
     parser.add_argument("--dice-rules", type=Path, default=DEFAULT_RULES,
                         help="JSON file defining dice system formats")
+    parser.add_argument("--inventory-rules", type=Path, default=DEFAULT_INVENTORY_RULES,
+                        help="Inventory configuration saved for each room on first roster access")
     parser.add_argument("--access-token-file", type=Path,
                         help="Require a bearer token from this file for all chat API requests")
     arguments = parser.parse_args()
@@ -185,7 +224,7 @@ def main() -> None:
         if len(token) < 32:
             parser.error("The access token must contain at least 32 characters.")
     with ChatHTTPServer((arguments.host, arguments.port), arguments.database, token,
-                        DiceTool(arguments.dice_rules)) as server:
+                        DiceTool(arguments.dice_rules), InventoryRules.load(arguments.inventory_rules)) as server:
         print(f"IIRPG Chat: http://{arguments.host}:{server.server_port}", flush=True)
         try:
             server.serve_forever()

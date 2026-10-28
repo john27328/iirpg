@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "id": "pf2e-remaster",
+  "name": "Pathfinder 2e Remaster",
+  "source": "Player Core (2023), pp. 267–271, 287",
+  "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2143",
+  "license": "ORC",
+  "notice": "inventory-ORC-NOTICE.md",
+  "attributes": {
+    "strength": {"label": "Модификатор Силы", "min": -5, "max": 20, "default": 0}
+  },
+  "sizes": {"small": "Маленький", "medium": "Средний"},
+  "default_size": "medium",
+  "hands": 2,
+  "states": {
+    "held": {"label": "В руках", "uses_hands": true},
+    "worn": {"label": "На себе", "uses_hands": false},
+    "stowed": {"label": "Убрано", "uses_hands": false}
+  },
+  "default_state": "stowed",
+  "worn_state": "worn",
+  "bulk": {
+    "strategy": "pf2e",
+    "light_per_bulk": 10,
+    "coins_per_bulk": 1000,
+    "attribute": "strength",
+    "encumbered_base": 5,
+    "maximum_base": 10
+  },
+  "categories": {
+    "weapon": {"label": "Оружие"},
+    "armor": {"label": "Броня", "worn_count_limit": 1, "carried_bulk_extra": 10},
+    "shield": {"label": "Щит"},
+    "toolkit": {"label": "Набор инструментов", "worn_bulk_limit": 20},
+    "consumable": {"label": "Расходник"},
+    "gear": {"label": "Снаряжение"}
+  },
+  "catalog": [
+    {"id": "longsword", "name": "Длинный меч", "category": "weapon", "bulk": "1", "required_hands": 1, "free_hands": 0, "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2155"},
+    {"id": "dagger", "name": "Кинжал", "category": "weapon", "bulk": "L", "required_hands": 1, "free_hands": 0, "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2155"},
+    {"id": "full-plate", "name": "Латный доспех", "category": "armor", "bulk": "4", "required_hands": 2, "free_hands": 0, "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2155"},
+    {"id": "chalk", "name": "Мел", "category": "gear", "bulk": "—", "required_hands": 1, "free_hands": 0, "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2155"}
+  ]
+}

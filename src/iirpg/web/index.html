@@ -4,25 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#111414">
-  <title>Чат и JSON-заглушка — IIRPG</title>
+  <title>Игра — IIRPG</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/app.js"></script>
 </head>
-<body>
+<body data-view="game">
   <div class="workspace">
     <header class="topbar">
-      <a class="brand" href="/" aria-label="IIRPG — главная"><span class="brand-mark">ii</span>IIRPG <span class="brand-label">PLAYGROUND</span></a>
+      <a class="brand" href="/" aria-label="IIRPG — главная"><span class="brand-mark">ii</span>IIRPG <span class="brand-label">ИГРА · ПРОТОТИП</span></a>
+      <nav class="page-nav" aria-label="Страницы"><a href="/" class="page-link" aria-current="page">Игра</a><a href="/debug" class="page-link alternate-view">Отладка</a></nav>
       <div class="connection" role="status"><span class="status-dot"></span><span id="connection-label">Подключение…</span></div>
     </header>
     <main>
       <section class="intro" aria-labelledby="page-title">
-        <div><div class="eyebrow">ТЕСТОВЫЙ ДИАЛОГ <span> / 001</span></div><h1 id="page-title">Одна очередь. <span>Чат и JSON.</span></h1><p>Общайтесь в чате и проверяйте сообщения через JSON-заглушку.</p></div>
+        <div><div class="eyebrow">ТЕСТОВАЯ ИГРА <span> / IIRPG</span></div><h1 id="page-title">Ваша история. <span>Ваш следующий ход.</span></h1><p>Продолжайте приключение, следите за персонажами и собирайте снаряжение.</p></div>
         <div class="room-actions"><button id="copy-link" class="button-secondary" disabled>Скопировать ссылку</button><button id="new-room" class="button-icon" title="Новый диалог" aria-label="Начать новый диалог" disabled>＋</button></div>
       </section>
       <div id="notice" class="notice" role="alert" hidden></div>
       <form id="access-gate" class="notice access-gate" hidden><label for="access-key">Ключ доступа к диалогу</label><input id="access-key" type="password" autocomplete="current-password" placeholder="Вставьте ключ из вашей ссылки" required><button class="button-secondary" type="submit">Открыть чат</button></form>
-      <section id="chats" class="chats" aria-label="Чат и тестовая JSON-заглушка"></section>
+      <nav class="workspace-tabs" aria-label="Разделы комнаты"><button type="button" id="show-chat" aria-pressed="true">Диалог</button><button type="button" id="show-inventory" aria-pressed="false">Персонажи и инвентарь</button></nav>
+      <section id="chats" class="chats game-chat" aria-label="Игровой чат"></section>
+      <section id="inventory" class="inventory" aria-label="Персонажи и инвентарь" hidden></section>
       <footer class="workspace-footer"><span><span class="small-dot"></span> Общее пространство диалога</span><span>История сохраняется автоматически</span></footer>
     </main>
   </div>
@@ -30,7 +33,7 @@
     <article class="chat">
       <header class="chat-header"><div class="avatar" aria-hidden="true"></div><div><h2></h2><p class="chat-subtitle"></p></div><span class="chat-number" aria-hidden="true"></span></header>
       <div class="message-list" role="log" aria-live="polite" aria-relevant="additions" tabindex="0">
-        <div class="empty-state"><div class="empty-icon" aria-hidden="true">↔</div><h3>Здесь начинается разговор</h3><p>Напишите сообщение и выберите,<br>каким чатам оно будет видно.</p></div>
+        <div class="empty-state"><div class="empty-icon" aria-hidden="true">↔</div><h3>Ваше приключение начинается здесь</h3><p>Напишите свой первый ход<br>или дождитесь ответа ведущего.</p></div>
       </div>
       <form class="composer" novalidate>
         <details class="dice-panel"><summary>🎲 Кости</summary><div class="dice-fields">
@@ -41,22 +44,10 @@
           <div class="dice-pool-fields" hidden><label>Условие на кости<select class="dice-die-operator" disabled><option value=">=">≥</option><option value=">">&gt;</option><option value="<=">≤</option><option value="<">&lt;</option><option value="==">=</option><option value="!=">≠</option></select></label><label>Порог на кости<input class="dice-die-target" type="number" step="1" min="-1000000" max="1000000" disabled></label></div>
           <label class="dice-label-field">Проверка<input class="dice-label" type="text" maxlength="100" placeholder="Например, скрытность" disabled></label>
         </div><div class="dice-actions"><span>Запрос и результат сохранятся в ленте.</span><button class="button-secondary dice-roll" type="button" disabled>Бросить кости</button></div><p class="dice-error form-error" role="alert" hidden></p></details>
-        <div class="visibility-control"><label class="visibility-label">Видимость</label><select class="visibility-select" disabled><option value="all">Чату и заглушке</option><option value="self">Только чату</option></select></div><label class="sr-only"></label><div class="composer-field"><textarea rows="2" maxlength="2000" placeholder="Напишите сообщение…" disabled></textarea><button class="send-button" type="submit" aria-label="Отправить сообщение" disabled>↑</button></div><div class="composer-meta"><span>Enter — отправить <span class="meta-separator">·</span> Shift + Enter — новая строка</span><span class="character-count">0 / 2000</span></div><p class="form-error" role="alert" hidden></p>
+        <div class="visibility-control"><label class="visibility-label">Видимость</label><select class="visibility-select" disabled><option value="all">Общее сообщение</option><option value="self">Только игроку</option></select></div><label class="sr-only"></label><div class="composer-field"><textarea rows="2" maxlength="2000" placeholder="Напишите сообщение…" disabled></textarea><button class="send-button" type="submit" aria-label="Отправить сообщение" disabled>↑</button></div><div class="composer-meta"><span>Enter — отправить <span class="meta-separator">·</span> Shift + Enter — новая строка</span><span class="character-count">0 / 2000</span></div><p class="form-error" role="alert" hidden></p>
       </form>
     </article>
   </template>
-  <template id="json-stub-template">
-    <article class="chat second json-stub">
-      <header class="chat-header"><div class="avatar" aria-hidden="true">{ }</div><div><h2>JSON-заглушка</h2><p class="chat-subtitle">Входящие записи очереди · second</p></div><span class="chat-number">JSON</span></header>
-      <div class="message-list json-log" role="log" aria-live="polite" aria-relevant="additions" tabindex="0"><div class="empty-state"><div class="empty-icon" aria-hidden="true">{ }</div><h3>Входящие JSON-сообщения</h3><p>Доступные заглушке записи<br>появятся здесь целиком.</p></div></div>
-      <form class="composer json-composer">
-        <div class="visibility-control"><label for="json-mode">Формат отправки</label><select id="json-mode" class="json-mode visibility-select" disabled><option value="command">Команда ведущего</option><option value="raw">Сырой JSON очереди</option></select></div>
-        <div class="visibility-control"><label for="json-input">Отправить JSON в очередь</label><span class="json-template-actions"><button class="json-dice-offer json-new-id" type="button" disabled>Предложить бросок</button><button class="json-dice-example json-new-id" type="button" disabled>Пример костей</button><button class="json-new-id json-renew-id" type="button" title="Изменить только request_id для нового сообщения" disabled>Новый request_id</button></span></div>
-        <textarea id="json-input" class="json-input" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="json-hint" disabled></textarea>
-        <div class="json-actions"><span id="json-hint">Объект отправляется как введён.<br>Повтор с тем же ID не создаёт дубль.</span><button class="button-secondary json-send" type="submit" disabled>Отправить JSON</button></div>
-        <p class="json-status" role="status" hidden></p><p class="form-error" role="alert" hidden></p>
-      </form>
-    </article>
-  </template>
+
 </body>
 </html>

@@ -1,8 +1,12 @@
+import { InventoryPanel } from "/inventory.js";
+import { DebugPanel } from "/debug.js";
+
 const $ = (selector, root = document) => root.querySelector(selector);
 const notice = $("#notice");
 const connection = $(".connection");
 const copyButton = $("#copy-link");
 const newButton = $("#new-room");
+const isDebug = document.body.dataset.view === "debug";
 const roomPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 let room = null;
 let generation = 0;
@@ -41,6 +45,12 @@ function roomFragment() {
   if (room) params.set("room", room);
   if (accessToken) params.set("access", accessToken);
   return params.toString();
+}
+
+function updatePageLinks() {
+  document.querySelectorAll(".page-link, .brand").forEach((link) => {
+    link.hash = roomFragment();
+  });
 }
 
 setToken(readFragment().get("access") || savedToken());
@@ -89,9 +99,9 @@ class Chat {
     this.toolCalls = new Map();
     this.element = $("#chat-template").content.firstElementChild.cloneNode(true);
     this.element.classList.add(key);
-    $("h2", this.element).textContent = `Чат ${number}`;
-    $(".avatar", this.element).textContent = number;
-    $(".chat-number", this.element).textContent = "CHAT";
+    $("h2", this.element).textContent = "Приключение";
+    $(".avatar", this.element).textContent = "i";
+    $(".chat-number", this.element).textContent = "ИГРА";
     $(".chat-subtitle", this.element).textContent = subtitle;
     this.list = $(".message-list", this.element);
     this.input = $("textarea", this.element);
@@ -180,7 +190,7 @@ class Chat {
     item.id = `message-${this.key}-${message.id}`;
     const label = document.createElement("span");
     label.className = "message-label";
-    label.textContent = outgoing ? "Вы" : ({ first: "Чат", second: "JSON-заглушка" }[message.sender] || message.sender);
+    label.textContent = outgoing ? "Вы" : ({ first: "Игрок", second: "Ведущий" }[message.sender] || message.sender);
     if (message.visibility.mode === "selected") label.textContent += " · Ограниченная видимость";
     const text = document.createElement("p");
     text.className = "message-text";
@@ -242,7 +252,7 @@ class Chat {
     header.className = "dice-card-header";
     const label = document.createElement("span");
     label.className = "message-label";
-    const name = (key) => key === this.key ? "Вы" : ({ first: "Чат", second: "JSON-заглушка" }[key] || key || "Кости");
+    const name = (key) => key === this.key ? "Вы" : ({ first: "Игрок", second: "Ведущий" }[key] || key || "Кости");
     label.textContent = `🎲 ${offer ? `${name(offer.sender)} → ${name(offer.recipient)}` : name(owner)} · ${arguments_.label}`;
     if (source.visibility.mode === "selected") label.textContent += " · Ограниченная видимость";
     const time = document.createElement("time");
@@ -663,15 +673,28 @@ class JsonStub {
   }
 }
 
-const first = new Chat("first", "01", "Читает доступные сообщения общей ленты");
-const stub = new JsonStub();
-const chats = [first, stub];
+const context = () => ({ room, generation, ready });
+const first = isDebug ? null : new Chat("first", "01", "Ваши действия и ответы ведущего");
+const stub = isDebug ? new JsonStub() : null;
+const debug = isDebug ? new DebugPanel($("#debug-inspector"), $("#debug-log"), request, context) : null;
+const chats = [first, stub, debug].filter(Boolean);
+const inventory = isDebug ? null : new InventoryPanel($("#inventory"), request, context, createRequestId);
+
+for (const [id, showInventory] of [["#show-chat", false], ["#show-inventory", true]]) {
+  $(id)?.addEventListener("click", () => {
+    $("#chats").hidden = showInventory;
+    $("#inventory").hidden = !showInventory;
+    $("#show-chat").setAttribute("aria-pressed", String(!showInventory));
+    $("#show-inventory").setAttribute("aria-pressed", String(showInventory));
+    if (showInventory) inventory.refresh(true).catch((error) => inventory.showError(error));
+  });
+}
 
 async function refreshChats(roomId, epoch) {
   const pages = await Promise.all(chats.map((chat) => chat.read(roomId)));
   if (epoch !== generation || roomId !== room) return false;
   pages.forEach((page, index) => chats[index].applyPage(page));
-  return pages.some((page) => page.has_more);
+  return chats.some((chat) => chat.hasMore);
 }
 
 async function poll(epoch) {
@@ -679,6 +702,7 @@ async function poll(epoch) {
   let next = document.hidden ? 5000 : 900;
   try {
     const hasMore = await refreshChats(room, epoch);
+    if (inventory && !$("#inventory").hidden) await inventory.refresh();
     if (epoch !== generation) return;
     if (hasMore) next = 0;
     setConnection(true);
@@ -700,6 +724,7 @@ async function openRoom(fresh = false) {
   copyButton.disabled = true;
   newButton.disabled = true;
   chats.forEach((chat) => chat.update());
+  inventory?.update();
   notice.hidden = true;
   try {
     const fragment = readFragment();
@@ -718,13 +743,16 @@ async function openRoom(fresh = false) {
       } else throw error;
     }
     diceCatalog = await request("/api/tools/dice");
-    first.configureDice(diceCatalog);
+    const roster = inventory ? await request(`/api/rooms/${selected}/roster`) : null;
+    first?.configureDice(diceCatalog);
     room = selected;
     chats.forEach((chat) => chat.reset());
     initial.forEach((page, index) => chats[index].applyPage(page));
     history.replaceState(null, "", `#${roomFragment()}`);
+    updatePageLinks();
     rememberRoom(room);
     ready = true;
+    inventory?.reset(roster);
     accessGate.hidden = true;
     copyButton.disabled = false;
     setConnection(true);
@@ -738,6 +766,7 @@ async function openRoom(fresh = false) {
     if (previousRoom && error.status !== 401) {
       room = previousRoom;
       ready = true;
+      inventory?.update();
       copyButton.disabled = false;
       chats.forEach((chat) => chat.update());
       poll(epoch);
@@ -749,8 +778,8 @@ async function openRoom(fresh = false) {
 }
 
 newButton.addEventListener("click", () => {
-  if (chats.some((chat) => chat.busy)) return;
-  if (chats.some((chat) => chat.hasDraft()) && !confirm("Начать новый диалог? Неотправленный текст будет очищен.")) return;
+  if (inventory?.busy || chats.some((chat) => chat.busy)) return;
+  if ((inventory?.hasDraft() || chats.some((chat) => chat.hasDraft())) && !confirm("Начать новый диалог? Неотправленные данные будут очищены.")) return;
   openRoom(true);
 });
 

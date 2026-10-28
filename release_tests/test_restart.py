@@ -52,6 +52,42 @@ def running_server(directory: Path):
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_inventory_and_retry_survive_process_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            token = secrets.token_urlsafe(32)
+            (directory / "access-token").write_text(token)
+
+            def request(base, path, payload=None, key=None):
+                data = None if payload is None else json.dumps(payload).encode()
+                headers = {"Content-Type": "application/json", "Authorization": "Bearer " + token}
+                if key:
+                    headers["Idempotency-Key"] = key
+                with urlopen(Request(base + path, data=data, headers=headers), timeout=5) as response:
+                    return json.load(response)
+
+            with running_server(directory) as base:
+                room = request(base, "/api/rooms", {})["room_id"]
+                path = f"/api/rooms/{room}/roster"
+                player = request(base, path, {"action": "create_player", "revision": 0,
+                                 "data": {"name": "Игрок"}}, str(uuid4()))["entity_id"]
+                actor = request(base, path, {"action": "create_character", "revision": 1,
+                                "data": {"name": "Герой", "player_id": player}}, str(uuid4()))["entity_id"]
+                request_id = str(uuid4())
+                item = {"action": "add_item", "revision": 2, "character_id": actor,
+                        "data": {"name": "Кинжал", "category": "weapon", "bulk": "L", "state": "held"}}
+                receipt = request(base, path, item, request_id)
+                state = request(base, path)
+                debug_path = f"/api/rooms/{room}/debug"
+                debug = request(base, debug_path)
+
+            with running_server(directory) as base:
+                self.assertEqual(request(base, path), state)
+                self.assertEqual(request(base, debug_path), debug)
+                self.assertEqual(request(base, path, item, request_id), receipt)
+                self.assertEqual(len(request(base, path)["characters"][0]["items"]), 1)
+                self.assertEqual(state["characters"][0]["summary"]["hands_used"], 1)
+
     def test_gm_transport_retry_survives_process_restart(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

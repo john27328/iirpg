@@ -45,11 +45,45 @@ class ServerTests(unittest.TestCase):
             return response.status, response.read()
 
     def test_page_and_static_assets_are_served(self) -> None:
-        for path, marker in [("/", "Одна очередь."), ("/app.js", "class Chat"), ("/styles.css", ".chats")]:
+        for path, marker in [("/", "Ваша история."), ("/debug", "Внутренние сущности"),
+                             ("/debug/", "ИНСПЕКТОР КОМНАТЫ"), ("/debug.js", "class DebugPanel"),
+                             ("/app.js", "class Chat"), ("/styles.css", ".chats")]:
             status, body = self.request(path)
             self.assertEqual(status, 200)
             self.assertIn(marker, body.decode())
         self.assertEqual(self.request("/health")[0], 200)
+
+    def test_game_and_debug_pages_have_separate_components(self) -> None:
+        game = self.request("/")[1].decode()
+        debug = self.request("/debug")[1].decode()
+        self.assertIn('data-view="game"', game)
+        self.assertIn('id="chat-template"', game)
+        self.assertIn('id="inventory"', game)
+        self.assertNotIn('id="json-stub-template"', game)
+        self.assertNotIn('id="debug-inspector"', game)
+        self.assertIn('data-view="debug"', debug)
+        self.assertIn('id="json-stub-template"', debug)
+        self.assertIn('id="debug-inspector"', debug)
+        self.assertIn('id="debug-log"', debug)
+        self.assertNotIn('id="chat-template"', debug)
+        self.assertNotIn('id="inventory"', debug)
+
+    def test_debug_api_returns_full_log_and_validates_cursors(self) -> None:
+        room = json.loads(self.request("/api/rooms", {})[1])["room_id"]
+        path = f"/api/rooms/{room}"
+        payload = {"sender": "second", "text": "Скрытое событие", "request_id": str(uuid4()),
+                   "visibility": {"mode": "selected", "chat_ids": ["second"]}}
+        message = json.loads(self.request(path + "/messages", payload)[1])["message"]
+        self.assertEqual(json.loads(self.request(path + "/messages?chat=first")[1])["messages"], [])
+        status, body = self.request(path + "/debug")
+        self.assertEqual(status, 200)
+        snapshot = json.loads(body)
+        self.assertEqual(snapshot["entities"]["room"]["id"], room)
+        self.assertEqual(snapshot["queue"]["messages"], [message])
+        self.assertEqual(json.loads(self.request(path + f"/debug?after={message['id']}")[1])["queue"]["messages"], [])
+        for cursor in ("-1", "abc", "999999999999999999999"):
+            self.assertEqual(self.request(path + f"/debug?after={cursor}")[0], 400)
+        self.assertEqual(self.request(f"/api/rooms/{uuid4()}/debug")[0], 404)
 
     def test_full_bidirectional_delivery_and_retry(self) -> None:
         status, body = self.request("/api/rooms", {})
@@ -84,6 +118,40 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.request(f"/api/rooms/{uuid4()}/messages?chat=first")[0], 404)
         self.assertEqual(self.request("/../../AGENTS.md")[0], 404)
         self.assertEqual(self.request("/missing")[0], 404)
+
+    def test_roster_http_flow_validation_and_idempotency(self) -> None:
+        room = json.loads(self.request("/api/rooms", {})[1])["room_id"]
+        path = f"/api/rooms/{room}/roster"
+        state = json.loads(self.request(path)[1])
+        self.assertEqual(state["revision"], 0)
+        self.assertEqual(state["rules"]["id"], "pf2e-remaster")
+        headers = {"Idempotency-Key": str(uuid4())}
+        payload = {"action": "create_character", "revision": 0, "data": {"name": "Страж", "kind": "npc"}}
+        self.assertEqual(self.request(path, payload)[0], 400)
+        status, response = self.request(path, payload, headers)
+        self.assertEqual(status, 200)
+        actor = json.loads(response)["entity_id"]
+        self.assertEqual(json.loads(self.request(path, payload, headers)[1]), json.loads(response))
+        self.assertEqual(self.request(path, payload, {"Idempotency-Key": str(uuid4())})[0], 409)
+        self.assertEqual(self.request(path, {**payload, "data": {"name": "Другой"}}, headers)[0], 409)
+        item = {"action": "add_item", "revision": 1, "character_id": actor,
+                "data": {"name": "Меч", "category": "weapon", "bulk": "1", "state": "held"}}
+        self.assertEqual(self.request(path, item, {"Idempotency-Key": str(uuid4())})[0], 200)
+        state = json.loads(self.request(path)[1])
+        self.assertEqual(state["characters"][0]["items"][0]["name"], "Меч")
+        self.assertEqual(state["characters"][0]["summary"]["hands_used"], 1)
+        self.assertEqual(self.request(path, {**item, "revision": 2, "data": {**item["data"], "quantity": True}},
+                                      {"Idempotency-Key": str(uuid4())})[0], 400)
+        self.assertEqual(json.loads(self.request(path)[1]), state)
+        self.assertEqual(self.request(f"/api/rooms/{uuid4()}/roster")[0], 404)
+
+    def test_inventory_assets_and_license_are_served(self) -> None:
+        for path, marker in [("/inventory.js", b"class InventoryPanel"),
+                             ("/inventory-ORC-NOTICE.md", b"Attribution Notice"),
+                             ("/inventory-LICENSE-ORC.pdf", b"%PDF")]:
+            status, body = self.request(path)
+            self.assertEqual(status, 200)
+            self.assertIn(marker, body)
 
     def test_restricted_message_never_appears_in_other_subscriber_response(self) -> None:
         room = json.loads(self.request("/api/rooms", {})[1])["room_id"]
@@ -275,6 +343,14 @@ class AccessTests(unittest.TestCase):
                 status, created = request("/api/rooms", token, {})
                 self.assertEqual(status, 201)
                 path = f"/api/rooms/{created['room_id']}/messages"
+                roster_path = f"/api/rooms/{created['room_id']}/roster"
+                self.assertEqual(request(roster_path)[0], 401)
+                self.assertEqual(request(roster_path, payload={})[0], 401)
+                self.assertEqual(request(roster_path, token)[0], 200)
+                debug_path = f"/api/rooms/{created['room_id']}/debug"
+                self.assertEqual(request(debug_path)[0], 401)
+                self.assertEqual(request(debug_path, "wrong")[0], 401)
+                self.assertEqual(request(debug_path, token)[0], 200)
                 self.assertEqual(request(f"/api/rooms/{created['room_id']}/gm/commands", payload={"text": "Hello"})[0], 401)
                 self.assertEqual(request(f"/api/rooms/{created['room_id']}/tools/dice", payload={})[0], 401)
                 self.assertEqual(request(path, token, {
