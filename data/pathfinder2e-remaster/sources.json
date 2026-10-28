@@ -1,0 +1,560 @@
+{
+  "schema_version": 1,
+  "edition": "Pathfinder Second Edition Remaster",
+  "language": "en",
+  "license": "ORC",
+  "retrieved_at": "2026-10-28",
+  "documents": [
+    {
+      "path": "rules/character-creation.md",
+      "title": "Character Creation",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 17"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Rules.aspx?ID=2027&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "cb87b33307f92172ca94a07fe3149b4c8c8b6c9cf2bf392ddac80692b95269ab",
+      "sha256": "98421cd4b4bdf82284e31da55bc0b91f1fd9a3260178d98252f854e41114a713",
+      "bytes": 31508,
+      "omissions": [
+        {
+          "kind": "section",
+          "source_text_sha256": "70cde64d30dd76c63453a0de2873bc284a1bea000161888d37cb3bc5de179488"
+        },
+        {
+          "kind": "paragraph",
+          "source_text_sha256": "e6201b5073da73b77c6834f4daeb59dbc5492eef26cf186d7d86ba1c43dbcc3d"
+        },
+        {
+          "kind": "paragraph",
+          "source_text_sha256": "44882d4b6dacf19f9655b1a36a66e10b1c7b0a12d02eec01b2224409ebbbcbbf"
+        }
+      ],
+      "game_name_redactions": 8,
+      "editorial_related_blocks_omitted": 0
+    },
+    {
+      "path": "rules/leveling-up.md",
+      "title": "Leveling Up",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 29"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Rules.aspx?ID=2065&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "2acaa4f2a08ce1718b41a765786c0dde22da68d0d562042f89030b077b7e650c",
+      "sha256": "055ad70a7add3203ffad60de2d003f2a11cbb92451549d7979471cd19672b644",
+      "bytes": 4885,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 0
+    },
+    {
+      "path": "rules/skills.md",
+      "title": "Chapter 4: Skills",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 225"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Rules.aspx?ID=2134&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "276095da5bf7f23a8020e1db060c15a482be2654cf79d4012ef192f41aa78a04",
+      "sha256": "9392e72326e0b4e25c0ebd6418aa18ee297f98bf0aaccace89c608ab6ba9f032",
+      "bytes": 8900,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 0
+    },
+    {
+      "path": "rules/equipment.md",
+      "title": "Chapter 6: Equipment",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 267"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Rules.aspx?ID=2143&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "9ccd100b06ff8168ecf8d95dbd449ee75daf48dbc36c218d323163c0d56b2b38",
+      "sha256": "e1de8c9d6eec582f048c3ea97d11bf1055f78b0258a31fe8c83a0799d2f97cf2",
+      "bytes": 52060,
+      "omissions": [
+        {
+          "kind": "section",
+          "source_text_sha256": "3a3eb50a3c2edd1da914bb0b7946a01e545da800131cd2b8e8d475bedfc2c56b"
+        },
+        {
+          "kind": "paragraph",
+          "source_text_sha256": "8990469069cb3b96cbd32739772d61f39b8e86dec7cb7d033d7fafdb8df7af64"
+        }
+      ],
+      "game_name_redactions": 1,
+      "editorial_related_blocks_omitted": 1
+    },
+    {
+      "path": "rules/spells.md",
+      "title": "Chapter 7: Spells",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 297"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Rules.aspx?ID=2221&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "fa0c4bd7e00e906d604963878b97757c541123f43d90d5004524b2f33cc5a75f",
+      "sha256": "fc0a66ff1cadf624c60ca9c2f7d3a7158895709a729ac4369e9611e767dd08f7",
+      "bytes": 43663,
+      "omissions": [
+        {
+          "kind": "paragraph",
+          "source_text_sha256": "4bb6dff7b890dbb0aef58fd5a1561c3cc2d4228d9ad80ea9b83b87738b26b47b"
+        }
+      ],
+      "game_name_redactions": 1,
+      "editorial_related_blocks_omitted": 0
+    },
+    {
+      "path": "rules/playing-the-game.md",
+      "title": "Chapter 8: Playing the Game",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 138",
+        "Player Core pg. 397",
+        "Player Core pg. 416",
+        "Player Core pg. 417",
+        "Player Core pg. 418",
+        "Player Core pg. 419",
+        "Player Core pg. 438",
+        "Player Core pg. 439"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Rules.aspx?ID=2263&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "93e795325043bb7051c2230adfe36f7633d3020a6160bac8e1396d4f6aaf6427",
+      "sha256": "672b6728f5ef2abe7c4ebd09a4c8530a0cbfd943d51ac0e96a09e96d4411e76f",
+      "bytes": 239349,
+      "omissions": [
+        {
+          "kind": "section",
+          "source_text_sha256": "acfdb39f484eb15ab31a7ff0609dd224812c601cdf466fc1e8d9b3799b457d12"
+        },
+        {
+          "kind": "paragraph",
+          "source_text_sha256": "67d4c209988c6f06511be920534a9781964a2140eca6dcfbe038e3078420b842"
+        }
+      ],
+      "game_name_redactions": 10,
+      "editorial_related_blocks_omitted": 1
+    },
+    {
+      "path": "rules/conditions.md",
+      "title": "Conditions",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 442",
+        "Player Core pg. 443",
+        "Player Core pg. 444",
+        "Player Core pg. 445",
+        "Player Core pg. 446",
+        "Player Core pg. 447"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Conditions.aspx",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "2102f2edca24b72179eae74a96e6d07c555d89591dbf77ba47134a3467185497",
+      "sha256": "50ee52ffb2423908f86210d2730433e7db3bbacf3eb06e539ca2ce2f648f3900",
+      "bytes": 36176,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 0
+    },
+    {
+      "path": "rules/difficulty-classes.md",
+      "title": "Difficulty Classes",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "GM Core",
+      "book_pages": [
+        "GM Core pg. 52"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Rules.aspx?ID=2627&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "b0381025e8a93e8b191ec7bf9014c7b7c5b610c27b75cdda4240edcbaa6e4ceb",
+      "sha256": "5de1dd5a630cc1d4f6b21b97259a6eef5f5cb42c1b96dd623de39cf5536ab26c",
+      "bytes": 19504,
+      "omissions": [
+        {
+          "kind": "paragraph",
+          "source_text_sha256": "4f438b9113fc345fe077100cc67101d34bdfec17c131b1c05006eeb0a43e79e8"
+        }
+      ],
+      "game_name_redactions": 1,
+      "editorial_related_blocks_omitted": 0
+    },
+    {
+      "path": "skills/acrobatics.md",
+      "title": "Acrobatics",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 233"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=34&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "9a172f65f6b7882e102f1840bf5106aad12c780ff44157ee571fd2c5cfa11bff",
+      "sha256": "0d2453882f26dfdd33dfa108ef9078907d2a5d52a9d7f301dfce59f565903e8f",
+      "bytes": 5709,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/arcana.md",
+      "title": "Arcana",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 234"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=35&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "6a74bdca9ef9ea6b2fd096c2cda1b3e5c8d5d0a0fb8dbfdf6c4b39552ca1427e",
+      "sha256": "b5b7f60430a313096fb2ddf129144f85cc3ea05db92a5032a750f4382977847c",
+      "bytes": 2274,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/athletics.md",
+      "title": "Athletics",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 234",
+        "Player Core pg. 235",
+        "Player Core pg. 236"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=36&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "10e1420a35a73cc239f7d2a1ca4c7c2ae3c1dcadd00a0ee44afb3f0e1a8a3465",
+      "sha256": "2157a690578eef0ba1d96bceff82378f086e23a0d0a0e25ac14b8caada62b19b",
+      "bytes": 15040,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/crafting.md",
+      "title": "Crafting",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 236",
+        "Player Core pg. 237"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=37&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "2a9bdf46a7d921d0bf65ef7a9e147dc85fe727cfb575d6256e3094618f6b1b8c",
+      "sha256": "3f103a240b82e1b276ae7b1765a8b4b8736a6a62488394b078a33bb4ebedc16f",
+      "bytes": 10059,
+      "omissions": [
+        {
+          "kind": "paragraph",
+          "source_text_sha256": "0bcf2f02a18bd34b5909467ba0505aed8fc092df23a7263d10ace6bf50fa1820"
+        },
+        {
+          "kind": "paragraph",
+          "source_text_sha256": "a4741d78eba79793f7f5815b55e068c2b14fbf47e6084694e65123f36a12b91e"
+        },
+        {
+          "kind": "paragraph",
+          "source_text_sha256": "beded04e770db4c2c0673d71a2b721b37357cd910137eaea4d7d481d1522d560"
+        },
+        {
+          "kind": "paragraph",
+          "source_text_sha256": "20ae8b1e77612b39b5dc52da85b63ee77283be0be1bd89d1827e125e21b1d4ce"
+        }
+      ],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/deception.md",
+      "title": "Deception",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 237",
+        "Player Core pg. 238",
+        "Player Core pg. 239"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=38&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "71e93095083248f48daa97e63a9b1a099520cfdf5c769e1098e0780595e7d718",
+      "sha256": "4a4f840b9ecd845bcd6a3582ab1b399a7f005b5c12358e58196bb63f660714b0",
+      "bytes": 6856,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/diplomacy.md",
+      "title": "Diplomacy",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 239"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=39&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "160a70fdb32cc9e35652bd86a97abeae6f937f61993aa06bb15fdfc836b2485f",
+      "sha256": "4ec1cc1e07004ade29add1490757b48dd3a1b6501bd710db258a68153c5be3a9",
+      "bytes": 5537,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/intimidation.md",
+      "title": "Intimidation",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 240"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=40&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "32c545acc376ffdf1b2ca8b7cc0f5c06d494bd49bbf8e54bbaee711c53ba55d5",
+      "sha256": "ae52f3ec2f99c99360c1dc81eb46c7da3ba2f0805f61952b79feb37a659fd53f",
+      "bytes": 5242,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/lore.md",
+      "title": "Lore",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 240"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=41&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "fd4fae7c6e30eb69df5ad86db3d80390a316d5fae5ff456ed243e722493c1e24",
+      "sha256": "ce11d8c9e9ac208f09ce963f1f9de0593c020f9cc4ed3c9aa34531aa0836fecb",
+      "bytes": 4074,
+      "omissions": [
+        {
+          "kind": "paragraph",
+          "source_text_sha256": "d68cbf9c242a7e589005cf86cb3354ccb5abb2f9e2037fc8056182671b35a25a"
+        },
+        {
+          "kind": "paragraph",
+          "source_text_sha256": "7fb912df11f2967a4bbedeb95e582eafccd0b9de3eeef671a478a7fec9cb93d6"
+        },
+        {
+          "kind": "paragraph",
+          "source_text_sha256": "87056bf238246b578e7c45f479143d5bcd781dfb69663188e757fc9971792d3f"
+        }
+      ],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/medicine.md",
+      "title": "Medicine",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 241",
+        "Player Core pg. 242"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=42&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "8e01f209c160c1f4dbe424c81901a5f3155c5a75c982ae31097b1c4577254491",
+      "sha256": "c99bbc33221e1bdc19edf726797dae06859de4919089bda0bad01e7faf09ce41",
+      "bytes": 7026,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/nature.md",
+      "title": "Nature",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 242"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=43&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "a228d0d784fe65507c528c0b364b0a9b1115397aa7e83cc3b7425fc462cd1d4b",
+      "sha256": "d136443a4330d39140e3caaca2ee4b4b696061539bfb62dc3baf5f70ab0b1910",
+      "bytes": 4534,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/occultism.md",
+      "title": "Occultism",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 243"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=44&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "a2fba460a621e0f444232aca0d71c7f8e35f04e1bf39f47af5aa4e4661cfb924",
+      "sha256": "b69ddbfa2a3f6e4e7a953df189f1d10ffc99d5d72d2fcacaa0cc7e7e020a138b",
+      "bytes": 1843,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 1
+    },
+    {
+      "path": "skills/performance.md",
+      "title": "Performance",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 243"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=45&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "9cf3c38eb278946f70ba8c7ab7033bc961adb47574492f877c1549ef34dc903a",
+      "sha256": "a3d92986bece4f5e7bcb1f1b70686c30ad1cd46bfc39e4cf9dbd1a1b5a80d691",
+      "bytes": 3613,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/religion.md",
+      "title": "Religion",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 244"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=46&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "c1f0d0cae0e65624630036c3299f3d75b918ee6a5de40a9d2d77fe9dd2e5590f",
+      "sha256": "f9e497d89d3aea03aa7b2769d03a1c399bf9eee51a258d84fbef9010e927715e",
+      "bytes": 1741,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 1
+    },
+    {
+      "path": "skills/society.md",
+      "title": "Society",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 244"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=47&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "b53856188a19caba1262a5465d3a1f4c1177130808dcd0fe9ab5474ecd55de83",
+      "sha256": "68d4e0bfa6f9f32ac6c131e0cf28b7161644c0e9cea540dd1de8427453475671",
+      "bytes": 3406,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/stealth.md",
+      "title": "Stealth",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 244",
+        "Player Core pg. 245"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=48&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "85932a88a5550cfa0b43db9434755e2311631c42377cd0dddbf0ff4f717c487f",
+      "sha256": "dc8834ac47727fbd20c3e1599155786098865be51553e77621bc3474f5248ea3",
+      "bytes": 9528,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/survival.md",
+      "title": "Survival",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 246"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=49&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "da47c7a371d4ffa1c3e7fa7bda1a96aad2fcfb19e7a3ef9b76e0eb66fb3c8dd7",
+      "sha256": "921679d1f8edcc4ff7de959a4feb1842e5feb539ceb0dff812ec325755eaae71",
+      "bytes": 4864,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    },
+    {
+      "path": "skills/thievery.md",
+      "title": "Thievery",
+      "edition": "Pathfinder Second Edition Remaster",
+      "book": "Player Core",
+      "book_pages": [
+        "Player Core pg. 246",
+        "Player Core pg. 247"
+      ],
+      "license": "ORC",
+      "url": "https://2e.aonprd.com/Skills.aspx?ID=50&NoRedirect=1",
+      "retrieved_at": "2026-10-28",
+      "upstream_html_sha256": "ccfcea7f73166ecc72d456369eb40d12190f982aa5617b05c814b2eb42a56f45",
+      "sha256": "c8896f34e69e254a22a506dca904fa0949043ad9f70e482fd493b515f2959f23",
+      "bytes": 5606,
+      "omissions": [],
+      "game_name_redactions": 0,
+      "editorial_related_blocks_omitted": 2
+    }
+  ],
+  "license_file": {
+    "path": "LICENSE-ORC.pdf",
+    "url": "https://downloads.paizo.com/ORC_LicenseFINAL.pdf",
+    "sha256": "3fffe0fe69781b7115bccbfa0f51489e0a073c211772f5ebcd84d34f88f19b29",
+    "bytes": 248604
+  },
+  "attribution_sources": [
+    "https://2e.aonprd.com/Licenses.aspx",
+    "https://github.com/foundryvtt/pf2e/blob/v14-dev/static/licenses/ORCLicense.md"
+  ]
+}

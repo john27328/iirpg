@@ -9,7 +9,7 @@ This text RPG uses open Pathfinder rules and a Python backend. A chat and JSON t
 - `src/iirpg/`: Python package; `domain.py` defines messages and visibility, `application.py` filters subscriptions, `storage.py` persists JSON envelopes, and `server.py` handles HTTP.
 - `src/iirpg/web/`: browser interface, with one `Chat` and a raw JSON `JsonStub`.
 - `tests/`: fast tests; `release_tests/`: separately invoked release checks.
-- `dice.py`: generic dice; `rules/dice_systems.json`: formats. `docs/`: contracts; future `data/`: attributed content.
+- `dice.py`: generic dice; `rules/dice_systems.json`: formats. `docs/`: contracts; `data/pathfinder2e-remaster/`: attributed ORC rules reference.
 
 Keep game mechanics independent of HTTP handlers and storage. Add directories when they contain useful files.
 
