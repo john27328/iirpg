@@ -10,10 +10,12 @@ import secrets
 from urllib.parse import parse_qs, urlsplit
 
 from .application import ChatService
+from .dice import DEFAULT_RULES, DiceTool
 from .storage import ChatStore, MessageConflict
 
 WEB_ROOT = Path(__file__).with_name("web")
 ROOM_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/messages\Z")
+DICE_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/tools/dice\Z")
 MAX_BODY_SIZE = 16384
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -25,8 +27,9 @@ STATIC_FILES = {
 class ChatHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], database: Path, access_token: str = "") -> None:
-        self.service = ChatService(ChatStore(database))
+    def __init__(self, address: tuple[str, int], database: Path, access_token: str = "",
+                 dice: DiceTool | None = None) -> None:
+        self.service = ChatService(ChatStore(database), dice)
         self.access_token = access_token
         super().__init__(address, ChatHandler)
 
@@ -77,6 +80,14 @@ class ChatHandler(BaseHTTPRequestHandler):
             raise ValueError("Ожидается объект JSON.")
         return payload
 
+    @staticmethod
+    def _message_response(message: dict) -> dict:
+        response = {"message": message}
+        if message["type"] == "tool.result":
+            response.update({"result": message["tool_result"]["result"],
+                             "success": message["tool_result"]["success"]})
+        return response
+
     def _dispatch(self, method: str) -> None:
         route = urlsplit(self.path)
         if method == "GET" and route.path in STATIC_FILES:
@@ -96,6 +107,15 @@ class ChatHandler(BaseHTTPRequestHandler):
             self._body()
             self._json(201, {"room_id": self.server.service.store.create_room()})
             return
+        if method == "GET" and route.path == "/api/tools/dice":
+            self._json(200, self.server.service.dice.describe())
+            return
+        dice_match = DICE_ROUTE.fullmatch(route.path)
+        if method == "POST" and dice_match:
+            payload = {**self._body(), "type": "tool.call", "tool": "dice.roll"}
+            message = self.server.service.send(dice_match.group(1), payload)
+            self._json(201, self._message_response(message))
+            return
         match = ROOM_ROUTE.fullmatch(route.path)
         if match:
             room_id = match.group(1)
@@ -108,7 +128,7 @@ class ChatHandler(BaseHTTPRequestHandler):
                 self._json(200, page)
                 return
             if method == "POST":
-                self._json(201, {"message": self.server.service.send(room_id, self._body())})
+                self._json(201, self._message_response(self.server.service.send(room_id, self._body())))
                 return
         self._json(404, {"error": "Страница не найдена."})
 
@@ -141,6 +161,8 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--database", type=Path, default=Path(".local/chat.sqlite3"))
+    parser.add_argument("--dice-rules", type=Path, default=DEFAULT_RULES,
+                        help="JSON file defining dice system formats")
     parser.add_argument("--access-token-file", type=Path,
                         help="Require a bearer token from this file for all chat API requests")
     arguments = parser.parse_args()
@@ -149,7 +171,8 @@ def main() -> None:
         token = arguments.access_token_file.read_text().strip()
         if len(token) < 32:
             parser.error("The access token must contain at least 32 characters.")
-    with ChatHTTPServer((arguments.host, arguments.port), arguments.database, token) as server:
+    with ChatHTTPServer((arguments.host, arguments.port), arguments.database, token,
+                        DiceTool(arguments.dice_rules)) as server:
         print(f"IIRPG Chat: http://{arguments.host}:{server.server_port}", flush=True)
         try:
             server.serve_forever()

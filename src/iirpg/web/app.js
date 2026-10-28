@@ -10,6 +10,7 @@ let timer;
 let ready = false;
 let switching = false;
 let accessToken = "";
+let diceCatalog = null;
 const accessGate = $("#access-gate");
 
 function readFragment() {
@@ -76,6 +77,7 @@ class Chat {
     this.busy = false;
     this.retry = null;
     this.ids = new Set();
+    this.toolCalls = new Map();
     this.element = $("#chat-template").content.firstElementChild.cloneNode(true);
     this.element.classList.add(key);
     $("h2", this.element).textContent = `Чат ${number}`;
@@ -92,7 +94,19 @@ class Chat {
     label.htmlFor = this.input.id;
     label.textContent = `Сообщение от чата ${number}`;
     this.button = $(".send-button", this.element);
-    this.error = $(".form-error", this.element);
+    this.error = $(".composer > .form-error", this.element);
+    this.dicePanel = $(".dice-panel", this.element);
+    this.diceSystem = $(".dice-system", this.element);
+    this.diceError = $(".dice-error", this.element);
+    this.diceRetry = null;
+    this.diceSystem.addEventListener("change", () => this.applyDiceSystem());
+    $(".dice-roll", this.element).addEventListener("click", () => this.rollDice());
+    this.dicePanel.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.isComposing && ["INPUT", "SELECT"].includes(event.target.tagName)) {
+        event.preventDefault();
+        this.rollDice();
+      }
+    });
     this.input.addEventListener("input", () => this.update());
     this.input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
@@ -114,6 +128,9 @@ class Chat {
     this.element.querySelectorAll(".reply-choice").forEach((button) => {
       button.disabled = !ready || this.busy;
     });
+    this.dicePanel.querySelectorAll("input, select, button").forEach((control) => {
+      control.disabled = !ready || this.busy || !diceCatalog;
+    });
     $(".character-count", this.element).textContent = `${Array.from(this.input.value).length} / 2000`;
   }
 
@@ -121,9 +138,12 @@ class Chat {
 
   reset() {
     this.ids.clear();
+    this.toolCalls.clear();
     this.cursor = 0;
     this.hasMore = false;
     this.retry = null;
+    this.diceRetry = null;
+    this.diceError.hidden = true;
     this.busy = false;
     this.input.value = "";
     this.audience.value = "all";
@@ -136,11 +156,16 @@ class Chat {
     if (this.ids.has(message.id)) return;
     this.ids.add(message.id);
     $(".empty-state", this.list)?.remove();
+    if (message.tool === "dice.roll" && ["tool.call", "tool.result"].includes(message.type)) {
+      this.receiveDice(message);
+      return;
+    }
     const nearBottom = this.list.scrollHeight - this.list.scrollTop - this.list.clientHeight < 90;
     const outgoing = message.sender === this.key;
     const item = document.createElement("div");
     item.className = `message${outgoing ? " outgoing" : ""}`;
     item.dataset.messageId = message.id;
+    item.id = `message-${this.key}-${message.id}`;
     const label = document.createElement("span");
     label.className = "message-label";
     label.textContent = outgoing ? "Вы" : ({ first: "Чат", second: "JSON-заглушка" }[message.sender] || message.sender);
@@ -175,6 +200,70 @@ class Chat {
     item.append(time);
     const following = Array.from(this.list.children).find(
       (child) => Number(child.dataset.messageId) > message.id,
+    );
+    this.list.insertBefore(item, following || null);
+    if (nearBottom || outgoing) this.list.scrollTop = this.list.scrollHeight;
+  }
+
+  receiveDice(message) {
+    const isResult = message.type === "tool.result";
+    const key = isResult ? (message.tool_call_id || message.request_id) : message.request_id;
+    if (!this.toolCalls.has(key)) this.toolCalls.set(key, { item: document.createElement("div") });
+    const entry = this.toolCalls.get(key);
+    entry[isResult ? "result" : "call"] = message;
+    const { call, result, item } = entry;
+    const source = call || result;
+    const owner = call?.sender || result.requested_by;
+    const outgoing = owner === this.key;
+    const arguments_ = source.arguments;
+    const roll = result?.tool_result;
+    const nearBottom = this.list.scrollHeight - this.list.scrollTop - this.list.clientHeight < 90;
+    const detailsOpen = $("details", item)?.open || false;
+    item.className = `message dice-card${outgoing ? " outgoing" : ""}${roll ? (roll.success ? " dice-success" : " dice-failure") : ""}`;
+    item.dataset.messageId = source.id;
+    item.id = `message-${this.key}-${source.id}`;
+
+    const body = document.createElement("div");
+    body.className = "dice-card-body";
+    const header = document.createElement("div");
+    header.className = "dice-card-header";
+    const label = document.createElement("span");
+    label.className = "message-label";
+    const ownerName = outgoing ? "Вы" : ({ first: "Чат", second: "JSON-заглушка" }[owner] || owner || "Кости");
+    label.textContent = `🎲 ${ownerName} · ${arguments_.label}`;
+    if (source.visibility.mode === "selected") label.textContent += " · Ограниченная видимость";
+    const time = document.createElement("time");
+    time.className = "message-time";
+    time.dateTime = source.created_at;
+    time.textContent = new Date(source.created_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    header.append(label, time);
+
+    const line = document.createElement("div");
+    line.className = "dice-card-line";
+    const formula = document.createElement("span");
+    const symbols = { ">=": "≥", ">": ">", "<=": "≤", "<": "<", "==": "=", "!=": "≠" };
+    const criterion = arguments_.success;
+    const score = roll ? `${roll.aggregation === "count" ? "успехов: " : ""}${roll.result}` : "…";
+    formula.textContent = `${arguments_.roll} → ${score} · ${symbols[criterion.operator]} ${criterion.target}`;
+    const outcome = document.createElement("span");
+    outcome.className = "dice-outcome";
+    outcome.textContent = roll ? (roll.success ? "Успех" : "Неудача") : "Бросок…";
+    line.append(formula, outcome);
+    body.append(header, line);
+    if (result) {
+      const details = document.createElement("details");
+      details.className = "dice-details";
+      details.open = detailsOpen;
+      const summary = document.createElement("summary");
+      summary.textContent = "Подробности";
+      const text = document.createElement("p");
+      text.textContent = result.text;
+      details.append(summary, text);
+      body.append(details);
+    }
+    item.replaceChildren(body);
+    const following = Array.from(this.list.children).find(
+      (child) => child !== item && Number(child.dataset.messageId) > source.id,
     );
     this.list.insertBefore(item, following || null);
     if (nearBottom || outgoing) this.list.scrollTop = this.list.scrollHeight;
@@ -230,6 +319,79 @@ class Chat {
       }
     }
   }
+
+  configureDice(catalog) {
+    this.diceSystem.replaceChildren();
+    for (const [key, definition] of Object.entries(catalog.systems)) {
+      const option = document.createElement("option");
+      option.value = key;
+      option.textContent = definition.label;
+      this.diceSystem.append(option);
+    }
+    this.applyDiceSystem();
+  }
+
+  applyDiceSystem() {
+    const definition = diceCatalog?.systems[this.diceSystem.value];
+    if (!definition) return;
+    $(".dice-formula", this.element).value = definition.roll;
+    $(".dice-operator", this.element).value = definition.success.operator;
+    $(".dice-target", this.element).value = definition.success.target;
+    $(".dice-pool-fields", this.element).hidden = definition.aggregation !== "count";
+    if (definition.success.die) {
+      $(".dice-die-operator", this.element).value = definition.success.die.operator;
+      $(".dice-die-target", this.element).value = definition.success.die.target;
+    }
+    this.diceError.hidden = true;
+  }
+
+  async rollDice() {
+    if (!ready || this.busy || !diceCatalog) return;
+    this.diceError.hidden = true;
+    const integer = (selector) => {
+      const value = $(selector, this.element).value;
+      if (!String(value).trim() || !Number.isInteger(Number(value))) throw new Error("Порог должен быть целым числом.");
+      return Number(value);
+    };
+    let arguments_;
+    try {
+      const success = { operator: $(".dice-operator", this.element).value, target: integer(".dice-target") };
+      if (diceCatalog.systems[this.diceSystem.value].aggregation === "count") {
+        success.die = { operator: $(".dice-die-operator", this.element).value, target: integer(".dice-die-target") };
+      }
+      arguments_ = { system: this.diceSystem.value, roll: $(".dice-formula", this.element).value,
+        success, label: $(".dice-label", this.element).value.trim() || "Бросок костей" };
+    } catch (error) {
+      this.diceError.textContent = error.message;
+      this.diceError.hidden = false;
+      return;
+    }
+    const visibility = this.audience.value === "self" ? { mode: "selected", chat_ids: [this.key] } : { mode: "all", chat_ids: [] };
+    const signature = JSON.stringify({ arguments: arguments_, visibility });
+    if (this.diceRetry?.signature !== signature) {
+      this.diceRetry = { signature, payload: { sender: this.key, request_id: crypto.randomUUID(), arguments: arguments_, visibility } };
+    }
+    const epoch = generation;
+    const targetRoom = room;
+    this.busy = true;
+    this.update();
+    try {
+      await request(`/api/rooms/${targetRoom}/tools/dice`, { method: "POST", body: JSON.stringify(this.diceRetry.payload) });
+      if (epoch !== generation) return;
+      this.diceRetry = null;
+      setConnection(true);
+      try { await refreshChats(targetRoom, epoch); } catch {
+        if (epoch === generation) setConnection(false);
+      }
+    } catch (error) {
+      if (epoch !== generation) return;
+      this.diceError.textContent = `${error.message} Повтор с теми же параметрами не перебросит кости.`;
+      this.diceError.hidden = false;
+      if (!error.status || error.status >= 500) setConnection(false);
+    } finally {
+      if (epoch === generation) { this.busy = false; this.update(); }
+    }
+  }
 }
 
 class JsonStub {
@@ -239,11 +401,22 @@ class JsonStub {
     this.list = $(".json-log", this.element);
     this.input = $(".json-input", this.element);
     this.button = $(".json-send", this.element);
-    this.newIdButton = $(".json-new-id", this.element);
+    this.newIdButton = $(".json-renew-id", this.element);
+    this.diceExampleButton = $(".json-dice-example", this.element);
     this.error = $(".form-error", this.element);
     this.status = $(".json-status", this.element);
     this.reset();
     this.input.addEventListener("input", () => this.update());
+    this.diceExampleButton.addEventListener("click", () => {
+      const system = diceCatalog.systems.d20 ? "d20" : Object.keys(diceCatalog.systems)[0];
+      const definition = diceCatalog.systems[system];
+      this.input.value = JSON.stringify({ sender: "second", type: "tool.call", tool: "dice.roll",
+        request_id: crypto.randomUUID(), arguments: { system, roll: definition.roll,
+          success: definition.success } }, null, 2);
+      this.error.hidden = true;
+      this.status.hidden = true;
+      this.update();
+    });
     this.newIdButton.addEventListener("click", () => {
       try {
         const payload = this.parse();
@@ -264,6 +437,7 @@ class JsonStub {
   update() {
     this.input.disabled = !ready || this.busy;
     this.newIdButton.disabled = !ready || this.busy;
+    this.diceExampleButton.disabled = !ready || this.busy || !diceCatalog;
     this.button.disabled = !ready || this.busy || !this.input.value.trim();
   }
 
@@ -411,6 +585,8 @@ async function openRoom(fresh = false) {
         initial = await Promise.all(chats.map((chat) => chat.read(selected, 0)));
       } else throw error;
     }
+    diceCatalog = await request("/api/tools/dice");
+    first.configureDice(diceCatalog);
     room = selected;
     chats.forEach((chat) => chat.reset());
     initial.forEach((page, index) => chats[index].applyPage(page));

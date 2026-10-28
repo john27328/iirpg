@@ -32,7 +32,17 @@
       <div class="message-list" role="log" aria-live="polite" aria-relevant="additions" tabindex="0">
         <div class="empty-state"><div class="empty-icon" aria-hidden="true">↔</div><h3>Здесь начинается разговор</h3><p>Напишите сообщение и выберите,<br>каким чатам оно будет видно.</p></div>
       </div>
-      <form class="composer"><div class="visibility-control"><label class="visibility-label">Видимость</label><select class="visibility-select" disabled><option value="all">Чату и заглушке</option><option value="self">Только чату</option></select></div><label class="sr-only"></label><div class="composer-field"><textarea rows="2" maxlength="2000" placeholder="Напишите сообщение…" disabled></textarea><button class="send-button" type="submit" aria-label="Отправить сообщение" disabled>↑</button></div><div class="composer-meta"><span>Enter — отправить <span class="meta-separator">·</span> Shift + Enter — новая строка</span><span class="character-count">0 / 2000</span></div><p class="form-error" role="alert" hidden></p></form>
+      <form class="composer" novalidate>
+        <details class="dice-panel"><summary>🎲 Кости</summary><div class="dice-fields">
+          <label>Формат<select class="dice-system" disabled></select></label>
+          <label>Формула<input class="dice-formula" type="text" maxlength="120" placeholder="1d20+5" disabled></label>
+          <label>Успех<select class="dice-operator" disabled><option value=">=">≥</option><option value=">">&gt;</option><option value="<=">≤</option><option value="<">&lt;</option><option value="==">=</option><option value="!=">≠</option></select></label>
+          <label>Порог<input class="dice-target" type="number" step="1" min="-1000000" max="1000000" disabled></label>
+          <div class="dice-pool-fields" hidden><label>Условие на кости<select class="dice-die-operator" disabled><option value=">=">≥</option><option value=">">&gt;</option><option value="<=">≤</option><option value="<">&lt;</option><option value="==">=</option><option value="!=">≠</option></select></label><label>Порог на кости<input class="dice-die-target" type="number" step="1" min="-1000000" max="1000000" disabled></label></div>
+          <label class="dice-label-field">Проверка<input class="dice-label" type="text" maxlength="100" placeholder="Например, скрытность" disabled></label>
+        </div><div class="dice-actions"><span>Запрос и результат сохранятся в ленте.</span><button class="button-secondary dice-roll" type="button" disabled>Бросить кости</button></div><p class="dice-error form-error" role="alert" hidden></p></details>
+        <div class="visibility-control"><label class="visibility-label">Видимость</label><select class="visibility-select" disabled><option value="all">Чату и заглушке</option><option value="self">Только чату</option></select></div><label class="sr-only"></label><div class="composer-field"><textarea rows="2" maxlength="2000" placeholder="Напишите сообщение…" disabled></textarea><button class="send-button" type="submit" aria-label="Отправить сообщение" disabled>↑</button></div><div class="composer-meta"><span>Enter — отправить <span class="meta-separator">·</span> Shift + Enter — новая строка</span><span class="character-count">0 / 2000</span></div><p class="form-error" role="alert" hidden></p>
+      </form>
     </article>
   </template>
   <template id="json-stub-template">
@@ -40,7 +50,7 @@
       <header class="chat-header"><div class="avatar" aria-hidden="true">{ }</div><div><h2>JSON-заглушка</h2><p class="chat-subtitle">Входящие записи очереди · second</p></div><span class="chat-number">JSON</span></header>
       <div class="message-list json-log" role="log" aria-live="polite" aria-relevant="additions" tabindex="0"><div class="empty-state"><div class="empty-icon" aria-hidden="true">{ }</div><h3>Входящие JSON-сообщения</h3><p>Доступные заглушке записи<br>появятся здесь целиком.</p></div></div>
       <form class="composer json-composer">
-        <div class="visibility-control"><label for="json-input">Отправить JSON в очередь</label><button class="json-new-id" type="button" title="Изменить только request_id для нового сообщения" disabled>Новый request_id</button></div>
+        <div class="visibility-control"><label for="json-input">Отправить JSON в очередь</label><span class="json-template-actions"><button class="json-dice-example json-new-id" type="button" disabled>Пример костей</button><button class="json-new-id json-renew-id" type="button" title="Изменить только request_id для нового сообщения" disabled>Новый request_id</button></span></div>
         <textarea id="json-input" class="json-input" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="json-hint" disabled></textarea>
         <div class="json-actions"><span id="json-hint">Объект отправляется как введён.<br>Повтор с тем же ID не создаёт дубль.</span><button class="button-secondary json-send" type="submit" disabled>Отправить JSON</button></div>
         <p class="json-status" role="status" hidden></p><p class="form-error" role="alert" hidden></p>

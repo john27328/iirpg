@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "systems": {
+    "d20": {
+      "label": "d20",
+      "aggregation": "sum",
+      "roll": "1d20",
+      "success": {"operator": ">=", "target": 10}
+    },
+    "sum_d6": {
+      "label": "Сумма d6",
+      "aggregation": "sum",
+      "roll": "2d6",
+      "success": {"operator": ">=", "target": 7}
+    },
+    "percentile": {
+      "label": "Процентный бросок",
+      "aggregation": "sum",
+      "roll": "1d100",
+      "success": {"operator": "<=", "target": 50}
+    },
+    "pool_d10": {
+      "label": "Пул d10",
+      "aggregation": "count",
+      "roll": "5d10",
+      "success": {"operator": ">=", "target": 3, "die": {"operator": ">=", "target": 6}}
+    }
+  }
+}

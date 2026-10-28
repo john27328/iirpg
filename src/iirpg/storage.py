@@ -4,8 +4,8 @@ from contextlib import closing, contextmanager
 import json
 from pathlib import Path
 import sqlite3
-from typing import Iterator
-from uuid import uuid4
+from typing import Callable, Iterator
+from uuid import UUID, uuid4, uuid5
 
 from .domain import Message
 
@@ -110,3 +110,49 @@ class ChatStore:
                    ("sender", "type", "text", "visibility", "metadata", "choices", "schema_version")):
                 raise MessageConflict("Идентификатор сообщения уже использован.")
             return original
+
+    def append_tool_exchange(self, room_id: str, request_id: str, call: dict,
+                             expected: dict, generate: Callable[[], dict]) -> dict:
+        """Persist call and result atomically; retries never execute the tool again."""
+        result_id = str(uuid5(UUID(request_id), "tool.result"))
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._require_room(connection, room_id)
+            row = connection.execute(
+                "SELECT id, room_id, request_id, envelope FROM queue_events "
+                "WHERE room_id = ? AND request_id = ?", (room_id, request_id),
+            ).fetchone()
+            if row:
+                original = self._decode(row)
+                # Before calls were recorded, the client ID identified the result itself.
+                if original["type"] == "tool.result" and "tool_call_id" not in original:
+                    if any(original.get(key) != value for key, value in expected.items()):
+                        raise MessageConflict("Идентификатор запроса уже использован с другими аргументами.")
+                    return original
+                if any(original.get(key) != value for key, value in call.items() if key != "created_at"):
+                    raise MessageConflict("Идентификатор запроса уже использован с другими аргументами.")
+                result = connection.execute(
+                    "SELECT id, room_id, request_id, envelope FROM queue_events "
+                    "WHERE room_id = ? AND request_id = ?", (room_id, result_id),
+                ).fetchone()
+                if result is None:
+                    raise RuntimeError("У сохранённого вызова отсутствует результат.")
+                return self._decode(result)
+            if connection.execute(
+                "SELECT 1 FROM queue_events WHERE room_id = ? AND request_id = ?", (room_id, result_id),
+            ).fetchone():
+                raise MessageConflict("Идентификатор результата уже использован.")
+            connection.execute(
+                "INSERT INTO queue_events (room_id, request_id, envelope) VALUES (?, ?, ?)",
+                (room_id, request_id, json.dumps(call, ensure_ascii=False, allow_nan=False)),
+            )
+            envelope = {**generate(), **expected, "tool_call_id": request_id}
+            connection.execute(
+                "INSERT INTO queue_events (room_id, request_id, envelope) VALUES (?, ?, ?)",
+                (room_id, result_id, json.dumps(envelope, ensure_ascii=False, allow_nan=False)),
+            )
+            row = connection.execute(
+                "SELECT id, room_id, request_id, envelope FROM queue_events "
+                "WHERE room_id = ? AND request_id = ?", (room_id, result_id),
+            ).fetchone()
+            return self._decode(row)

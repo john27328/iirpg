@@ -10,6 +10,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from iirpg.dice import DiceTool
 from iirpg.server import ChatHTTPServer
 
 
@@ -17,7 +18,8 @@ class ServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.directory = tempfile.TemporaryDirectory()
-        cls.server = ChatHTTPServer(("127.0.0.1", 0), Path(cls.directory.name) / "chat.sqlite3")
+        cls.server = ChatHTTPServer(("127.0.0.1", 0), Path(cls.directory.name) / "chat.sqlite3",
+                                    dice=DiceTool(roll_die=lambda sides: min(13, sides)))
         cls.worker = Thread(target=cls.server.serve_forever, daemon=True)
         cls.worker.start()
         cls.base = f"http://127.0.0.1:{cls.server.server_port}"
@@ -150,6 +152,55 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(json.loads(self.request(path + "?chat=second")[1])["messages"], [question, reply])
         self.assertEqual(self.request(path, {**payload, "request_id": str(uuid4()), "choices": "bad"})[0], 400)
 
+    def test_raw_ai_tool_call_records_request_and_reply(self) -> None:
+        room = json.loads(self.request("/api/rooms", {})[1])["room_id"]
+        path = f"/api/rooms/{room}/messages"
+        payload = {"sender": "second", "type": "tool.call", "tool": "dice.roll",
+                   "request_id": str(uuid4()), "arguments": {
+                       "system": "d20", "roll": "1d20+5", "success": {"operator": ">=", "target": 15}}}
+        raw = json.dumps(payload, indent=2).encode()
+        status, body = self.raw_request(path, raw)
+        self.assertEqual(status, 201)
+        reply = json.loads(body)
+        messages = json.loads(self.request(path + "?chat=second")[1])["messages"]
+        call, result = messages
+        self.assertEqual(call["sender"], "second")
+        self.assertEqual(call["type"], "tool.call")
+        self.assertEqual(result, reply["message"])
+        self.assertEqual(result["tool_call_id"], payload["request_id"])
+        self.assertEqual(call["metadata"], {})
+        self.assertEqual(call["visibility"], {"mode": "all", "chat_ids": []})
+        self.assertEqual(json.loads(self.raw_request(path, raw)[1]), reply)
+        self.assertEqual(json.loads(self.request(path + "?chat=first")[1])["messages"], messages)
+
+    def test_dice_endpoint_and_queue_call_return_the_same_result(self) -> None:
+        status, body = self.request("/api/tools/dice")
+        self.assertEqual(status, 200)
+        catalog = json.loads(body)
+        self.assertEqual(catalog["name"], "dice.roll")
+        self.assertIn("pool_d10", catalog["systems"])
+        self.assertEqual(catalog["input_schema"]["required"], ["system", "success"])
+        room = json.loads(self.request("/api/rooms", {})[1])["room_id"]
+        path = f"/api/rooms/{room}"
+        payload = {"sender": "first", "request_id": str(uuid4()),
+                   "arguments": {"system": "d20", "roll": "1d20+5", "success": {"operator": ">=", "target": 18}}}
+        status, body = self.request(path + "/tools/dice", payload)
+        result = json.loads(body)
+        self.assertEqual(status, 201)
+        self.assertEqual(result["result"], 18)
+        self.assertIs(result["success"], True)
+        status, repeated = self.request(path + "/messages", {**payload, "type": "tool.call", "tool": "dice.roll"})
+        self.assertEqual(status, 201)
+        self.assertEqual(json.loads(repeated), result)
+        messages = json.loads(self.request(path + "/messages?chat=first")[1])["messages"]
+        self.assertEqual([message["type"] for message in messages], ["tool.call", "tool.result"])
+        self.assertEqual(messages[0]["request_id"], payload["request_id"])
+        self.assertEqual(messages[1], result["message"])
+        self.assertEqual(messages[1]["tool_call_id"], messages[0]["request_id"])
+        self.assertIn("18", messages[1]["text"])
+        invalid = {**payload, "request_id": str(uuid4()), "arguments": {"system": "unknown"}}
+        self.assertEqual(self.request(path + "/tools/dice", invalid)[0], 400)
+
 
 class AccessTests(unittest.TestCase):
     def test_api_requires_key_and_keeps_history_unavailable_without_it(self) -> None:
@@ -175,9 +226,12 @@ class AccessTests(unittest.TestCase):
             try:
                 self.assertEqual(request("/api/rooms", payload={})[0], 401)
                 self.assertEqual(request("/api/rooms", "wrong", {})[0], 401)
+                self.assertEqual(request("/api/tools/dice")[0], 401)
+                self.assertEqual(request("/api/tools/dice", token)[0], 200)
                 status, created = request("/api/rooms", token, {})
                 self.assertEqual(status, 201)
                 path = f"/api/rooms/{created['room_id']}/messages"
+                self.assertEqual(request(f"/api/rooms/{created['room_id']}/tools/dice", payload={})[0], 401)
                 self.assertEqual(request(path, token, {
                     "sender": "first", "text": "Protected history", "request_id": str(uuid4()),
                 })[0], 201)

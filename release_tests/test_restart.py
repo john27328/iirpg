@@ -75,14 +75,22 @@ class ReleaseTests(unittest.TestCase):
                 path = f"/api/rooms/{room}/messages"
                 first = request(base, path, shared)["message"]
                 second = request(base, path, restricted)["message"]
+                dice_payload = {"sender": "first", "request_id": str(uuid4()),
+                                "arguments": {"system": "d20", "roll": "1d20+5", "success": {"operator": ">=", "target": 15}}}
+                dice_path = f"/api/rooms/{room}/tools/dice"
+                dice = request(base, dice_path, dice_payload)["message"]
+                call = request(base, path + "?chat=first")["messages"][-2]
+                self.assertEqual(call["type"], "tool.call")
+                self.assertEqual(dice["tool_call_id"], call["request_id"])
 
             with running_server(directory) as base:
                 first_view = request(base, path + "?chat=first")
                 second_view = request(base, path + "?chat=second")
-                self.assertEqual(first_view["messages"], [first, second])
-                self.assertEqual(second_view["messages"], [first])
+                self.assertEqual(first_view["messages"], [first, second, call, dice])
+                self.assertEqual(second_view["messages"], [first, call, dice])
+                self.assertEqual(request(base, dice_path, dice_payload)["message"], dice)
                 self.assertEqual(request(base, path, shared)["message"], first)
-                self.assertEqual(len(request(base, path + "?chat=first")["messages"]), 2)
+                self.assertEqual(len(request(base, path + "?chat=first")["messages"]), 4)
                 with self.assertRaises(HTTPError) as denied:
                     request(base, path + "?chat=first", authenticated=False)
                 self.assertEqual(denied.exception.code, 401)

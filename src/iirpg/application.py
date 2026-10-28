@@ -2,13 +2,15 @@
 
 from uuid import UUID
 
+from .dice import SYMBOLS, DiceTool
 from .domain import Chat, Visibility
 from .storage import ChatStore
 
 
 class ChatService:
-    def __init__(self, store: ChatStore) -> None:
+    def __init__(self, store: ChatStore, dice: DiceTool | None = None) -> None:
         self.store = store
+        self.dice = dice or DiceTool()
         first = Chat("first", "Чат 01")
         second = Chat("second", "Чат 02")
         self.chats = {chat.key: chat for chat in (first, second)}
@@ -46,11 +48,36 @@ class ChatService:
             request_id = str(UUID(request_id))
         except ValueError:
             raise ValueError("Некорректный идентификатор сообщения.") from None
-        if payload.get("type", "chat.message") != "chat.message":
+        event_type = payload.get("type", "chat.message")
+        if event_type not in ("chat.message", "tool.call"):
             raise ValueError("Неизвестный тип события.")
         visibility = self._visibility(payload.get("visibility", {"mode": "all"}))
         if "metadata" in payload and not isinstance(payload["metadata"], dict):
             raise ValueError("metadata должен быть объектом JSON.")
+        if event_type == "tool.call":
+            if payload.get("tool") != "dice.roll":
+                raise ValueError("Неизвестный инструмент.")
+            if "choices" in payload and payload["choices"] != []:
+                raise ValueError("Вызов инструмента не задаёт варианты ответа.")
+            prepared = self.dice.prepare(payload.get("arguments"))
+            arguments = prepared.arguments
+            criterion = arguments["success"]
+            text = (f"{arguments['label']} · {prepared.system_label}\n"
+                    f"Бросить {arguments['roll']}; нужно {SYMBOLS[criterion['operator']]} {criterion['target']}.")
+            if "die" in criterion:
+                die = criterion["die"]
+                text += f" Успешная кость: {SYMBOLS[die['operator']]} {die['target']}."
+            base = self.chats[sender].send(text, visibility, payload.get("metadata")).to_dict()
+            call = {**base, "type": "tool.call", "tool": "dice.roll", "arguments": arguments}
+            expected = {"sender": "dice", "requested_by": sender, "type": "tool.result",
+                        "tool": "dice.roll", "arguments": prepared.arguments,
+                        "visibility": base["visibility"], "metadata": base["metadata"]}
+
+            def generate() -> dict:
+                result = self.dice.execute(prepared)
+                return {**base, "text": result["summary"], "tool_result": result}
+
+            return self.store.append_tool_exchange(room_id, request_id, call, expected, generate)
         choices = payload.get("choices", [])
         if not isinstance(choices, list):
             raise ValueError("choices должен быть массивом строк.")
