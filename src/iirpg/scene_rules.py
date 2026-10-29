@@ -1,9 +1,15 @@
 """Scene action effects without persistence or HTTP dependencies."""
 from typing import Callable
+from copy import deepcopy
 from .character_sheet import CharacterRules
 from .checks import degree
 from .roster import integer
 from .maps import move_on_map
+
+
+def initial_scene(room: str, rules: dict) -> dict:
+    return {'revision': 0, 'id': room, 'name': 'Придорожная таверна', 'rules': deepcopy(rules),
+            'zones': deepcopy(rules['zones']), 'entities': [dict(obj, kind='object') for obj in rules['objects']], 'proposals': []}
 
 def perform_action(state: dict, actor: dict, effect: str, target_id: str, dc: int | None, roster: dict, roll_die: Callable[[int], int], position: list[int] | None = None) -> dict:
     if effect == 'move_cell':

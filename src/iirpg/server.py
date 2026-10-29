@@ -9,6 +9,7 @@ import re
 import secrets
 from urllib.parse import parse_qs, urlsplit
 
+from .ai import AIService, DEFAULT_AI_CONFIG, OpenRouterClient, load_config
 from .scene import SceneStore
 from .combat import CombatStore
 from .application import ChatService
@@ -28,8 +29,12 @@ ROSTER_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/roster\Z")
 DEBUG_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/debug\Z")
 MAX_BODY_SIZE = 65536
 STATIC_FILES = {
+    "/battle": ("battle.html", "text/html; charset=utf-8"),
+    "/battle/": ("battle.html", "text/html; charset=utf-8"),
+    "/battle.js": ("battle.js", "text/javascript; charset=utf-8"),
+    "/battle.css": ("battle.css", "text/css; charset=utf-8"),
+    "/room-session.js": ("room-session.js", "text/javascript; charset=utf-8"),
     "/scene.js": ("scene.js", "text/javascript; charset=utf-8"),
-    "/combat.js": ("combat.js", "text/javascript; charset=utf-8"),
     "/": ("index.html", "text/html; charset=utf-8"),
     "/debug": ("debug.html", "text/html; charset=utf-8"),
     "/debug/": ("debug.html", "text/html; charset=utf-8"),
@@ -51,11 +56,14 @@ class ChatHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, address: tuple[str, int], database: Path, access_token: str = "",
                  dice: DiceTool | None = None, inventory_rules: InventoryRules | None = None,
-                 character_rules: CharacterRules | None = None) -> None:
+                 character_rules: CharacterRules | None = None,
+                 ai_config: Path = DEFAULT_AI_CONFIG,
+                 openrouter_key_file: Path = Path('.local/openrouter-key')) -> None:
         self.service = ChatService(ChatStore(database), dice)
         self.roster = RosterStore(self.service.store, inventory_rules or InventoryRules.load(), character_rules)
         self.combat = CombatStore(self.roster, self.service.dice.roll_die)
         self.scene = SceneStore(self.roster, self.service.dice.roll_die)
+        self.ai = AIService(self.combat, self.scene, load_config(ai_config), OpenRouterClient(openrouter_key_file))
         self.access_token = access_token
         super().__init__(address, ChatHandler)
 
@@ -150,6 +158,23 @@ class ChatHandler(BaseHTTPRequestHandler):
         if method == "GET" and route.path == "/api/gm/commands":
             self._json(200, describe_commands())
             return
+        if method == 'GET' and route.path == '/api/ai':
+            self._json(200, self.server.ai.status())
+            return
+        if method == 'GET' and route.path == '/api/combat/groups':
+            self._json(200, {'groups': self.server.combat.rules['groups']})
+            return
+        if method == 'GET' and route.path == '/api/combat/presets':
+            self._json(200, {'presets': self.server.combat.presets})
+            return
+        ai_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/ai/npc/(context|step)', route.path)
+        if ai_match:
+            if method == 'GET' and ai_match.group(2) == 'context':
+                self._json(200, self.server.ai.preview(ai_match.group(1)))
+                return
+            if method == 'POST' and ai_match.group(2) == 'step':
+                self._json(200, self.server.ai.step(ai_match.group(1), self._body(), self.headers.get('Idempotency-Key', '')))
+                return
         if method == "GET" and route.path == "/api/maps/schema":
             self._json(200, json.loads((DEFAULT_INVENTORY_RULES.parent / "map_schema.json").read_text()))
             return
@@ -175,7 +200,7 @@ class ChatHandler(BaseHTTPRequestHandler):
         debug_match = DEBUG_ROUTE.fullmatch(route.path)
         if method == "GET" and debug_match:
             self._json(200, inspect_room(self.server.service, self.server.roster,
-                                        debug_match.group(1), self._cursor(route.query), self.server.combat, self.server.scene))
+                                        debug_match.group(1), self._cursor(route.query), self.server.combat, self.server.scene, self.server.ai))
             return
         roster_match = ROSTER_ROUTE.fullmatch(route.path)
         if roster_match:
@@ -251,6 +276,10 @@ def main() -> None:
                         help="Character sheet fields, profiles and formulas saved per room")
     parser.add_argument("--access-token-file", type=Path,
                         help="Require a bearer token from this file for all chat API requests")
+    parser.add_argument('--ai-config', type=Path, default=DEFAULT_AI_CONFIG,
+                        help='NPC profile, free OpenRouter model and request limits')
+    parser.add_argument('--openrouter-key-file', type=Path, default=Path('.local/openrouter-key'),
+                        help='Server-only OpenRouter key; read at each request (or OPENROUTER_API_KEY)')
     arguments = parser.parse_args()
     token = ""
     if arguments.access_token_file:
@@ -259,7 +288,8 @@ def main() -> None:
             parser.error("The access token must contain at least 32 characters.")
     with ChatHTTPServer((arguments.host, arguments.port), arguments.database, token,
                         DiceTool(arguments.dice_rules), InventoryRules.load(arguments.inventory_rules),
-                        CharacterRules.load(arguments.character_rules)) as server:
+                        CharacterRules.load(arguments.character_rules), arguments.ai_config,
+                        arguments.openrouter_key_file) as server:
         print(f"IIRPG Chat: http://{arguments.host}:{server.server_port}", flush=True)
         try:
             server.serve_forever()

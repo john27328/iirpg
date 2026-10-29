@@ -32,10 +32,10 @@ def route(state: dict, start: list[int], goal: list[int], occupied: list[list[in
 def move_fighter(state: dict, scene: dict, position: list[int]) -> str:
     if state['actions']<=0:raise ValueError('Действия закончились.')
     actor=state['fighters'][state['turn']]
-    other=state['fighters'][1-state['turn']]
-    if position==other['position']:raise ValueError('Клетка занята противником.')
+    occupied=[f['position'] for i,f in enumerate(state['fighters']) if i!=state['turn'] and f['hp']>0 and not f.get('surrendered')]
+    if position in occupied:raise ValueError('Клетка занята участником боя.')
     temporary=deepcopy(scene)
-    temporary['entities'].append({'kind':'object','position':other['position'],'blocks_movement':True})
+    temporary['entities'].extend({'kind':'object','position':p,'blocks_movement':True} for p in occupied)
     moved={'position':list(actor['position'])}
     feet=move_on_map(temporary,moved,position,actor['speed'])
     actor.update(position=list(position),cover=None)
@@ -43,11 +43,17 @@ def move_fighter(state: dict, scene: dict, position: list[int]) -> str:
     return f"{actor['name']} перемещается в {position}: {feet} футов; осталось действий {state['actions']}."
 
 
-def approach(state: dict, scene: dict) -> list[int] | None:
-    actor=state['fighters'][state['turn']];target=state['fighters'][1-state['turn']]
+def approach(state: dict, scene: dict, target_index: int | None = None) -> list[int] | None:
+    if target_index is None:
+        own_team=state['fighters'][state['turn']].get('team','players' if state['turn']==0 else 'enemies')
+        choices=[i for i,f in enumerate(state['fighters']) if f.get('team','players' if i==0 else 'enemies')!=own_team and f['hp']>0 and not f.get('surrendered')]
+        if not choices:return None
+        target_index=min(choices,key=lambda i:distance(state['fighters'][state['turn']]['position'],state['fighters'][i]['position']))
+    actor=state['fighters'][state['turn']];target=state['fighters'][target_index]
+    occupied=[f['position'] for i,f in enumerate(state['fighters']) if i!=state['turn'] and f['hp']>0 and not f.get('surrendered')]
     x,y=target['position'];candidates=[]
     for goal in ([x-1,y],[x+1,y],[x,y-1],[x,y+1]):
-        path=route(scene,actor['position'],goal,[target['position']])
+        path=route(scene,actor['position'],goal,occupied)
         if path:candidates.append(path)
     if not candidates:return None
     def cost(path):return sum(10 if scene['map']['rows'][y][x]=='~' else 5 for x,y in path[1:])

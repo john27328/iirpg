@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111414"><title>Бой — IIRPG</title>
+  <link rel="icon" href="data:,"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/battle.css">
+  <script type="module" src="/battle.js"></script>
+</head>
+<body data-view="battle">
+  <div class="battle-workspace">
+    <header class="topbar">
+      <a class="brand" href="/"><span class="brand-mark">ii</span>IIRPG <span class="brand-label">ТАКТИЧЕСКИЙ БОЙ</span></a>
+      <nav class="page-nav" aria-label="Страницы"><a href="/" class="page-link">Игра</a><a href="/battle" class="page-link" aria-current="page">Бой</a><a href="/debug" class="page-link">Отладка</a></nav>
+      <div class="connection" role="status"><span class="status-dot"></span><span id="connection-label">Подключение…</span></div>
+    </header>
+    <main>
+      <div id="notice" class="notice" role="alert" hidden></div>
+      <form id="access-gate" class="notice access-gate" hidden><label for="access-key">Ключ доступа к комнате</label><input id="access-key" type="password" autocomplete="current-password" required><button type="submit">Подключиться</button></form>
+      <header class="battle-heading"><div><div class="eyebrow">УЧЕБНОЕ СТОЛКНОВЕНИЕ</div><h1 id="battle-title">Поле боя</h1><p id="battle-status" role="status">Загружаем обстановку…</p></div><button id="copy-link" class="button-secondary" type="button" disabled>Скопировать ссылку</button></header>
+      <details id="battle-preparation" class="battle-panel" open><summary>Участники и начало боя</summary>
+        <div class="preparation-grid"><fieldset><legend>Ваша группа <span>до 4 героев</span></legend><div id="party-options"><p>Добавьте персонажей на странице игры.</p></div></fieldset>
+          <div class="preparation-controls"><label class="preset-picker">Заготовка боя<select id="battle-preset" disabled></select></label><p id="preset-description"></p><label>Противники<select id="enemy-group" disabled></select></label><button type="button" id="start-battle" class="primary-action" disabled>Начать бой</button><p>ОЗ и снаряжение листов сохраняются. Заготовка загрузит свою карту при начале боя.</p><a href="/" class="page-link">Персонажи и своя карта ↗</a></div></div>
+      </details>
+      <section class="initiative-section" aria-labelledby="initiative-title"><div class="section-heading"><h2 id="initiative-title">Очередь ходов</h2><span id="round-label">—</span></div><ol id="initiative-queue" aria-label="Очередь участников"><li class="muted">Бой ещё не начат</li></ol></section>
+      <div class="battle-layout">
+        <div class="battle-column battle-left">
+<section class="battle-panel battlefield" aria-labelledby="map-title"><div class="section-heading"><div><h2 id="map-title">Карта</h2><p id="map-description">Выберите клетку назначения или цель.</p></div><div class="map-zoom"><button id="zoom-out" type="button" aria-label="Уменьшить карту">−</button><span id="zoom-label">100%</span><button id="zoom-in" type="button" aria-label="Увеличить карту">+</button></div></div>
+          <div class="map-legend"><span><i class="legend-dot players"></i>Ваша группа</span><span><i class="legend-dot enemies"></i>Противники</span><span><i class="legend-dot current"></i>Текущий ход</span><span>Клетка — 5 футов</span></div>
+          <div id="battle-map" class="battle-map-viewport" tabindex="0" aria-label="Карта боя"><p class="map-empty">Подготовьте карту на странице игры. Бой без карты доступен кнопками.</p></div>
+          <p id="map-selection" class="map-selection" role="status">Клетка и цель не выбраны.</p>
+        </section>
+
+        <section class="battle-panel battle-journal" aria-labelledby="journal-title"><div class="section-heading"><h2 id="journal-title">Журнал боя</h2><label class="follow-label"><input id="follow-log" type="checkbox" checked>Следить</label></div><div id="battle-log" role="log" aria-live="polite" aria-relevant="additions" tabindex="0"><p class="muted">Здесь появятся действия, броски и переговоры участников.</p></div></section>
+        </div>
+        <div class="battle-column battle-right">
+        <aside class="battle-panel turn-panel" aria-labelledby="active-name"><div class="eyebrow" id="turn-kind">ТЕКУЩИЙ УЧАСТНИК</div><h2 id="active-name">Ожидаем начала</h2><p id="active-controller" class="muted"></p><div id="active-vitals"></div><div id="action-points" aria-label="Оставшиеся действия"></div>
+          <p id="action-error" class="form-error" role="alert" hidden></p>
+          <fieldset id="hero-actions" disabled><legend class="sr-only">Действия активного героя</legend>
+            <label>Цель удара<select id="battle-target"></select></label>
+            <div class="action-grid"><button data-command="strike" type="button">Удар <small>◆ 1</small></button><button data-command="shield" type="button">Поднять щит <small>◆ 1</small></button><button data-command="move" type="button" id="move-action">Переместиться <small>◆ 1</small></button><button data-command="take_cover" type="button">Занять укрытие <small>◆ 1</small></button></div>
+            <label>Объект<select id="battle-object"></select></label><button data-command="tip_over" type="button" class="subtle-action">Опрокинуть объект <small>◆ 1</small></button>
+            <form id="battle-intent"><label for="intent-text">Ваше действие</label><textarea id="intent-text" maxlength="1000" rows="3" placeholder="Поднять щит, идти 3,4 или описать свой замысел…" required></textarea><button type="submit">Выполнить / предложить</button><p class="input-help">Команды «удар», «щит», «укрытие», «идти 3,4» выполняются сразу. Другой текст ждёт решения ведущего.</p></form>
+            <button data-command="end_turn" type="button" class="end-turn">Закончить ход →</button>
+          </fieldset>
+          <section id="npc-actions" hidden><p>Сейчас действует противник. Выберите способ разыграть его ход.</p><button id="ai-step" type="button">Одно действие ИИ</button><button data-command="enemy_turn" type="button" class="subtle-action">Весь ход · обычная тактика</button><p id="ai-status" class="input-help"></p><a href="/debug" class="page-link input-help">Контекст и решения ИИ ↗</a></section>
+          <button id="retry-action" type="button" hidden>Проверить результат запроса</button>
+        </aside>
+        <section class="battle-panel intentions-panel" aria-labelledby="intentions-title"><div class="section-heading"><h2 id="intentions-title">Намерения</h2><span id="intentions-count">0</span></div><div id="pending-intents"><p class="muted">Свободные описания действий сохраняются здесь до решения ведущего.</p></div>
+          <details id="gm-resolution"><summary>Ведущий · разобрать намерение</summary><p class="input-help">Общий тестовый стенд. Решение исполняется только в ход автора и проверяется движком. Для составного действия разрешайте по одному шагу.</p><label>Намерение<select id="resolve-intent"></select></label><label>Исполнить как<select id="resolve-effect"><option value="reject_intent">Отклонить</option><option value="strike">Ударить выбранную цель</option><option value="shield">Поднять щит</option><option value="move">Переместиться в выбранную клетку</option><option value="take_cover">Занять выбранное укрытие</option><option value="tip_over">Опрокинуть выбранный объект</option><option value="end_turn">Закончить ход</option></select></label><button id="resolve-action" type="button" disabled>Применить решение</button></details>
+        </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

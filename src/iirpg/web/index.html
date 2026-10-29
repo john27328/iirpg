@@ -13,7 +13,7 @@
   <div class="workspace">
     <header class="topbar">
       <a class="brand" href="/" aria-label="IIRPG — главная"><span class="brand-mark">ii</span>IIRPG <span class="brand-label">ИГРА · ПРОТОТИП</span></a>
-      <nav class="page-nav" aria-label="Страницы"><a href="/" class="page-link" aria-current="page">Игра</a><a href="/debug" class="page-link alternate-view">Отладка</a></nav>
+      <nav class="page-nav" aria-label="Страницы"><a href="/" class="page-link" aria-current="page">Игра</a><a href="/battle" class="page-link">Бой</a><a href="/debug" class="page-link alternate-view">Отладка</a></nav>
       <div class="connection" role="status"><span class="status-dot"></span><span id="connection-label">Подключение…</span></div>
     </header>
     <main>
@@ -25,7 +25,7 @@
       <form id="access-gate" class="notice access-gate" hidden><label for="access-key">Ключ доступа к диалогу</label><input id="access-key" type="password" autocomplete="current-password" placeholder="Вставьте ключ из вашей ссылки" required><button class="button-secondary" type="submit">Открыть чат</button></form>
       <nav class="workspace-tabs" aria-label="Разделы комнаты"><button type="button" id="show-chat" aria-pressed="true">Диалог</button><button type="button" id="show-inventory" aria-pressed="false">Персонажи и инвентарь</button></nav>
       <section id="scene" class="scene-panel" aria-label="Сцена"></section>
-      <section id="combat" class="combat-panel" aria-label="Учебный бой"></section>
+      <section id="battle-entry" class="battle-entry"><div><h2>Тактический бой</h2><p>Карта, очередь участников, действия и журнал — на отдельном экране.</p></div><a href="/battle" class="page-link">Открыть бой →</a></section>
       <section id="chats" class="chats game-chat" aria-label="Игровой чат"></section>
       <section id="inventory" class="inventory" aria-label="Персонажи и инвентарь" hidden></section>
       <footer class="workspace-footer"><span><span class="small-dot"></span> Общее пространство диалога</span><span>История сохраняется автоматически</span></footer>

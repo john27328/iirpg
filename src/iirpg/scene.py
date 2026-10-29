@@ -8,7 +8,7 @@ from typing import Callable
 import sqlite3
 from .maps import install_map, templates, zone_at
 from .roster import name
-from .scene_rules import perform_action
+from .scene_rules import perform_action, initial_scene
 from .roster_storage import RosterStore
 from .storage import MessageConflict
 
@@ -25,8 +25,7 @@ class SceneStore:
     def _load(self, c: sqlite3.Connection, room: str) -> dict:
         self.store._require_room(c, room)
         row = c.execute('SELECT body FROM scenes WHERE room_id=?', (room,)).fetchone()
-        return json.loads(row[0]) if row else {'revision': 0, 'id': room, 'name': 'Придорожная таверна', 'rules': self.rules,
-            'zones': deepcopy(self.rules['zones']), 'entities': [dict(obj, kind='object') for obj in self.rules['objects']], 'proposals': []}
+        return json.loads(row[0]) if row else initial_scene(room, self.rules)
 
     def read(self, room: str) -> dict:
         with self.store._connection() as c:

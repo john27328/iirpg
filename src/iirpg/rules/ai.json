@@ -1,0 +1,12 @@
+{
+  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "max_tokens": 256,
+  "timeout_seconds": 45,
+  "daily_request_limit": 100,
+  "context_max_bytes": 14000,
+  "npc": {
+    "personality": "Осторожный спарринг-партнёр, старается победить и защищаться при опасности.",
+    "goal": "Победить в учебном бою, используя доступные действия."
+  },
+  "reasoning": false
+}

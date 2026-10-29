@@ -1,0 +1,5 @@
+[
+  {"id":"tavern_duel","name":"Дуэль в таверне","description":"Один спарринг-партнёр, стены, стол и стойка. Для знакомства с ходами и укрытиями.","map_template":"tavern","group_id":"duel"},
+  {"id":"forest_patrol","name":"Патруль в лесном лагере","description":"Два противника с координацией, заросли и валун. Для проверки движения группы и отхода.","map_template":"forest_camp","group_id":"patrol"},
+  {"id":"tavern_squad","name":"Группа в таверне","description":"Три противника: старший, прикрывающий и резерв. Узкие проходы и отдельные ходы участников.","map_template":"tavern","group_id":"squad"}
+]

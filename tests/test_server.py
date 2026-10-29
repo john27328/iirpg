@@ -6,6 +6,7 @@ import secrets
 import tempfile
 from threading import Thread
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from uuid import uuid4
@@ -51,7 +52,43 @@ class ServerTests(unittest.TestCase):
             status, body = self.request(path)
             self.assertEqual(status, 200)
             self.assertIn(marker, body.decode())
+        for path, marker in [('/battle', 'Очередь ходов'), ('/battle/', 'Ваше действие'),
+                             ('/battle.js', 'renderQueue'), ('/battle.css', '.battle-layout'),
+                             ('/room-session.js', 'createRoomSession')]:
+            status, body = self.request(path)
+            self.assertEqual(status, 200)
+            self.assertIn(marker, body.decode())
         self.assertEqual(self.request("/health")[0], 200)
+
+    def test_ai_context_step_debug_and_retry_with_stubbed_provider(self) -> None:
+        from test_ai import FakeClient
+        client = FakeClient()
+        self.assertIn('patrol', json.loads(self.request('/api/combat/groups')[1])['groups'])
+        room = self.server.service.store.create_room()
+        actor = self.server.roster.execute(room, {'action': 'create_character', 'revision': 0,
+                    'data': {'name': 'Боец', 'sheet': {'values': {'hp_max': 20, 'hp_current': 20}}}}, str(uuid4()))['entity_id']
+        self.server.scene.execute(room, {'action': 'load_map', 'revision': 0,
+                                        'parameters': {'template_id': 'tavern'}}, str(uuid4()))
+        state = self.server.combat.execute(room, {'action': 'start', 'revision': 0, 'group_id': 'patrol',
+                                                 'character_id': actor}, str(uuid4()))
+        while state['turn'] != 2:
+            state = self.server.combat.execute(room, {'action': 'end_turn', 'revision': state['revision']}, str(uuid4()))
+        base = f'/api/rooms/{room}'
+        with patch.object(self.server.ai, 'client', client):
+            status, body = self.request('/api/ai')
+            self.assertEqual(status, 200)
+            self.assertTrue(json.loads(body)['free_only'])
+            self.assertEqual(self.request(base + '/ai/npc/context')[0], 200)
+            command = {'revision': state['revision']}
+            headers = {'Idempotency-Key': str(uuid4())}
+            status, body = self.request(base + '/ai/npc/step', command, headers)
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(body)['trace']['status'], 'completed')
+            self.assertEqual(self.request(base + '/ai/npc/step', command, headers)[1], body)
+            self.assertEqual(len(client.calls), 1)
+            debug = json.loads(self.request(base + '/debug')[1])['entities']['ai']
+            self.assertEqual(debug['requests'][0]['response']['model'], 'test/free')
+            self.assertEqual(self.request(base + '/ai/npc/step', {**command, 'model': 'paid/model'}, headers)[0], 400)
 
     def test_game_and_debug_pages_have_separate_components(self) -> None:
         game = self.request("/")[1].decode()
@@ -59,6 +96,8 @@ class ServerTests(unittest.TestCase):
         self.assertIn('data-view="game"', game)
         self.assertIn('id="chat-template"', game)
         self.assertIn('id="inventory"', game)
+        self.assertIn('href="/battle"', game)
+        self.assertNotIn('id="combat"', game)
         self.assertNotIn('id="json-stub-template"', game)
         self.assertNotIn('id="debug-inspector"', game)
         self.assertIn('data-view="debug"', debug)
@@ -67,6 +106,38 @@ class ServerTests(unittest.TestCase):
         self.assertIn('id="debug-log"', debug)
         self.assertNotIn('id="chat-template"', debug)
         self.assertNotIn('id="inventory"', debug)
+
+    def test_battle_party_text_and_actor_binding_over_http(self) -> None:
+        presets = json.loads(self.request('/api/combat/presets')[1])['presets']
+        self.assertEqual({p['id'] for p in presets}, {'tavern_duel', 'forest_patrol', 'tavern_squad'})
+        room = self.server.service.store.create_room()
+        ids = []
+        for name, perception in [('Первый', 30), ('Второй', 20)]:
+            ids.append(self.server.roster.execute(room, {'action': 'create_character',
+                'revision': self.server.roster.read(room)['revision'], 'data': {'name': name,
+                'sheet': {'values': {'hp_max': 20, 'hp_current': 20, 'perception_other': perception}}}}, str(uuid4()))['entity_id'])
+        path = f'/api/rooms/{room}/combat'
+        status, body = self.request(path, {'action': 'start', 'revision': 0, 'character_ids': ids, 'preset_id': 'forest_patrol'}, {'Idempotency-Key': str(uuid4())})
+        self.assertEqual(status, 200)
+        state = json.loads(body)
+        self.assertEqual(state['turn'], 0)
+        self.assertEqual(state['preset_id'], 'forest_patrol')
+        self.assertEqual(json.loads(self.request(f'/api/rooms/{room}/scene')[1])['map']['id'], 'forest_camp')
+        headers = {'Idempotency-Key': str(uuid4())}
+        command = {'action': 'intent', 'revision': state['revision'], 'actor_id': ids[0], 'text': 'Щит'}
+        status, body = self.request(path, command, headers)
+        self.assertEqual(status, 200)
+        self.assertEqual(self.request(path, command, headers)[1], body)
+        state = json.loads(body)
+        self.assertEqual(state['actions'], 2)
+        self.assertEqual(state['journal'][-1]['source_text'], 'Щит')
+        wrong = {'action': 'intent', 'revision': state['revision'], 'actor_id': ids[1], 'text': 'Щит'}
+        self.assertEqual(self.request(path, wrong, {'Idempotency-Key': str(uuid4())})[0], 400)
+        status, body = self.request(path, {**wrong, 'actor_id': ids[0], 'text': 'Обрушу потолок'}, {'Idempotency-Key': str(uuid4())})
+        self.assertEqual(status, 200)
+        state = json.loads(body)
+        self.assertEqual(state['actions'], 2)
+        self.assertEqual(state['intents'][0]['status'], 'pending')
 
     def test_debug_api_returns_full_log_and_validates_cursors(self) -> None:
         room = json.loads(self.request("/api/rooms", {})[1])["room_id"]
@@ -367,11 +438,15 @@ class AccessTests(unittest.TestCase):
                 self.assertEqual(request("/api/rooms", "wrong", {})[0], 401)
                 self.assertEqual(request("/api/tools/dice")[0], 401)
                 self.assertEqual(request("/api/gm/commands")[0], 401)
+                self.assertEqual(request('/api/ai')[0], 401)
                 self.assertEqual(request("/api/tools/dice", token)[0], 200)
                 status, created = request("/api/rooms", token, {})
                 self.assertEqual(status, 201)
                 path = f"/api/rooms/{created['room_id']}/messages"
                 roster_path = f"/api/rooms/{created['room_id']}/roster"
+                ai_path = f"/api/rooms/{created['room_id']}/ai/npc"
+                self.assertEqual(request(ai_path + '/context')[0], 401)
+                self.assertEqual(request(ai_path + '/step', payload={'revision': 0})[0], 401)
                 self.assertEqual(request(roster_path)[0], 401)
                 self.assertEqual(request(roster_path, payload={})[0], 401)
                 self.assertEqual(request(roster_path, token)[0], 200)

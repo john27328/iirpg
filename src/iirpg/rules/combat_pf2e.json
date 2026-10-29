@@ -1,1 +1,103 @@
-{"id":"pf2e-training","name":"Учебный бой PF2e","source_url":"https://2e.aonprd.com/Rules.aspx?ID=2263","license":"ORC","actions":3,"shield_bonus":2,"map":[0,-5,-10],"player":{"weapon":"Учебный меч","die":8,"proficiency_offset":4},"opponent":{"name":"Учебный спарринг-партнёр","hp":16,"ac":15,"attack":6,"damage_die":6,"damage_bonus":2,"perception":4},"note":"Учебная симуляция: экспертное владение мечом, цели в ближнем бою. ОЗ листов не расходуются. При 0 ОЗ участник выбывает; смерть, состояния, сопротивления и реакции пока не моделируются."}
+{
+  "id": "pf2e-training",
+  "name": "Учебный бой PF2e",
+  "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2263",
+  "license": "ORC",
+  "actions": 3,
+  "shield_bonus": 2,
+  "map": [
+    0,
+    -5,
+    -10
+  ],
+  "player": {
+    "weapon": "Учебный меч",
+    "die": 8,
+    "proficiency_offset": 4
+  },
+  "opponent": {
+    "name": "Учебный спарринг-партнёр",
+    "hp": 16,
+    "ac": 15,
+    "attack": 6,
+    "damage_die": 6,
+    "damage_bonus": 2,
+    "perception": 4
+  },
+  "note": "Учебная симуляция: экспертное владение мечом. ОЗ листов не расходуются. Группы и дальности восприятия — авторские параметры прототипа, не расчёт сложности PF2e. Реакции, скрытность и диагонали пока не моделируются.",
+  "coordination": {
+    "vision_feet": 60,
+    "hearing_feet": 30,
+    "order_ttl_turns": 4
+  },
+  "groups": {
+    "duel": {
+      "name": "Один спарринг-партнёр",
+      "members": [
+        {
+          "role": "leader"
+        }
+      ]
+    },
+    "patrol": {
+      "name": "Учебный патруль · 2 противника",
+      "members": [
+        {
+          "name": "Старший патруля",
+          "role": "leader",
+          "hp": 10,
+          "ac": 14,
+          "attack": 4,
+          "damage_die": 4,
+          "damage_bonus": 1,
+          "perception": 2
+        },
+        {
+          "name": "Прикрывающий",
+          "role": "guard",
+          "hp": 8,
+          "ac": 13,
+          "attack": 3,
+          "damage_die": 4,
+          "damage_bonus": 0,
+          "perception": 1
+        }
+      ]
+    },
+    "squad": {
+      "name": "Учебная группа · 3 противника",
+      "members": [
+        {
+          "name": "Старший группы",
+          "role": "leader",
+          "hp": 8,
+          "ac": 13,
+          "attack": 3,
+          "damage_die": 4,
+          "damage_bonus": 0,
+          "perception": 2
+        },
+        {
+          "name": "Передний",
+          "role": "guard",
+          "hp": 6,
+          "ac": 12,
+          "attack": 2,
+          "damage_die": 4,
+          "damage_bonus": 0,
+          "perception": 1
+        },
+        {
+          "name": "Резерв",
+          "role": "reserve",
+          "hp": 6,
+          "ac": 12,
+          "attack": 2,
+          "damage_die": 4,
+          "damage_bonus": 0,
+          "perception": 1
+        }
+      ]
+    }
+  }
+}

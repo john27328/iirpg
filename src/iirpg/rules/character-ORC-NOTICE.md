@@ -82,3 +82,8 @@ Training encounter presets are IIRPG-authored examples, not published creatures.
 Player Core p. 418, https://2e.aonprd.com/Actions.aspx?ID=2307. The tavern,
 zone abstraction, movable table example and its DC are IIRPG-authored scenario
 material and adjudication choices, not copied official scenes or universal rules.
+
+Группы учебных противников, роли, качественные описания ранений, дальности
+зрения/слышимости, протокол коротких докладов, устаревание приказов и условия
+сдачи являются авторскими параметрами пространственного прототипа. Они не
+заменяют полные правила обнаружения, общения или бюджета столкновений PF2e.

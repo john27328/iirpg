@@ -52,6 +52,54 @@ def running_server(directory: Path):
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_party_turn_intent_journal_and_receipt_survive_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            token = secrets.token_urlsafe(32)
+            (directory / 'access-token').write_text(token)
+
+            def request(base, path, payload=None, key=None):
+                headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token}
+                if key: headers['Idempotency-Key'] = key
+                with urlopen(Request(base + path, data=None if payload is None else json.dumps(payload).encode(), headers=headers), timeout=5) as response:
+                    return json.load(response)
+
+            with running_server(directory) as base:
+                room = request(base, '/api/rooms', {})['room_id']
+                root = f'/api/rooms/{room}'
+                ids = []
+                for index, perception in enumerate((100, 0)):
+                    ids.append(request(base, root + '/roster', {'action': 'create_character', 'revision': index,
+                        'data': {'name': f'Герой {index+1}', 'sheet': {'values': {
+                            'hp_max': 20, 'hp_current': 20, 'perception_other': perception}}}}, str(uuid4()))['entity_id'])
+                state = request(base, root + '/combat', {'action': 'start', 'revision': 0, 'character_ids': ids, 'preset_id': 'forest_patrol'}, str(uuid4()))
+                state = request(base, root + '/combat', {'action': 'intent', 'revision': state['revision'], 'actor_id': ids[0], 'text': 'Щит'}, str(uuid4()))
+                operation = str(uuid4())
+                command = {'action': 'intent', 'revision': state['revision'], 'actor_id': ids[0], 'text': 'Попробую договориться о перемирии'}
+                receipt = request(base, root + '/combat', command, operation)
+                state = request(base, root + '/combat', {'action': 'end_turn', 'revision': receipt['revision'], 'actor_id': ids[0]}, str(uuid4()))
+                while state['turn'] != 1:
+                    state = request(base, root + '/combat', {'action': 'end_turn', 'revision': state['revision'],
+                        'actor_id': state['fighters'][state['turn']]['entity_id']}, str(uuid4()))
+                scene = request(base, root + '/scene')
+                history = request(base, root + '/messages?chat=first')
+
+            with running_server(directory) as base:
+                self.assertEqual(request(base, root + '/combat'), state)
+                self.assertEqual(request(base, root + '/scene'), scene)
+                self.assertEqual(scene['map']['id'], 'forest_camp')
+                self.assertEqual(state['preset_id'], 'forest_patrol')
+                self.assertEqual(request(base, root + '/combat', command, operation), receipt)
+                self.assertEqual(request(base, root + '/combat'), state)
+                self.assertEqual(request(base, root + '/messages?chat=first'), history)
+                self.assertEqual(state['turn'], 1)
+                self.assertEqual(state['intents'][0]['status'], 'pending')
+                self.assertTrue(any(e.get('source_text') == command['text'] for e in state['journal']))
+                state = request(base, root + '/combat', {'action': 'intent', 'revision': state['revision'], 'actor_id': ids[1], 'text': 'Щит'}, str(uuid4()))
+                self.assertTrue(state['fighters'][1]['shield'])
+                self.assertEqual(state['journal'][-1]['actor'], 'Герой 2')
+                self.assertEqual([c['sheet']['values']['hp_current'] for c in request(base, root + '/roster')['characters']], [20, 20])
+
     def test_inventory_and_retry_survive_process_restart(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

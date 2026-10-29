@@ -7,6 +7,7 @@ const element = (tag, className = "", text = "") => {
   return node;
 };
 const ENTITY_LABELS = {
+  ai: "ИИ · контексты, запросы и ответы",
   scene: "Сцена и намерения", room: "Комната", players: "Игроки", characters: "Персонажи", items: "Предметы",
   rules: "Правила инвентаря", subscribers: "Подписчики", tools: "Инструменты и команды",
   character_rules: "Правила листа персонажа", encounter: "Текущее столкновение",
@@ -148,7 +149,7 @@ export class DebugPanel {
     row.append(header, metadata);
     if (event.combat) {
       const c = event.combat;
-      const labels = { move: "Перемещение", take_cover: "Укрытие", wait: "Ожидание", start: "Начало боя", strike: "Удар", shield: "Поднять щит", end_turn: "Конец хода", enemy_turn: "Ход противника" };
+      const labels = { intent: "Намерение", reject_intent: "Отклонение намерения", tip_over: "Опрокинуть объект", communicate: "Переговоры группы", surrender: "Сдача", move: "Перемещение", take_cover: "Укрытие", wait: "Ожидание", start: "Начало боя", strike: "Удар", shield: "Поднять щит", end_turn: "Конец хода", enemy_turn: "Ход противника" };
       row.append(element("p", "debug-combat-action", `Действие: ${labels[c.action] || c.action} · ${c.actor || event.sender} · Раунд ${c.round}${c.before && c.after ? ` · Действия: ${c.before.actions ?? "—"} → ${c.after.actions}` : ""}`));
     }
     if (event.text) row.append(element("p", "debug-event-text", event.text));

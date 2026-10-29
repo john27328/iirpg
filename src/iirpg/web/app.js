@@ -1,5 +1,4 @@
 import { setupScene } from "/scene.js";
-import { setupCombat } from "/combat.js";
 import { InventoryPanel } from "/inventory.js";
 import { DebugPanel } from "/debug.js";
 
@@ -58,14 +57,15 @@ function updatePageLinks() {
 setToken(readFragment().get("access") || savedToken());
 
 async function request(path, options = {}) {
+  const { timeoutMs = 12000, ...fetchOptions } = options;
   const response = await fetch(path, {
-    ...options,
+    ...fetchOptions,
     headers: {
       "Content-Type": "application/json",
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...options.headers,
     },
-    signal: AbortSignal.timeout(12000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const data = await response.json();
   if (!response.ok) {
@@ -678,7 +678,6 @@ class JsonStub {
 
 const context = () => ({ room, generation, ready });
 if (!isDebug) setupScene($("#scene"), request, context, createRequestId);
-if (!isDebug) setupCombat($("#combat"), request, context, createRequestId);
 const first = isDebug ? null : new Chat("first", "01", "Ваши действия и ответы ведущего");
 const stub = isDebug ? new JsonStub() : null;
 const debug = isDebug ? new DebugPanel($("#debug-inspector"), $("#debug-log"), request, context) : null;
@@ -689,6 +688,8 @@ for (const [id, showInventory] of [["#show-chat", false], ["#show-inventory", tr
   $(id)?.addEventListener("click", () => {
     $("#chats").hidden = showInventory;
     $("#inventory").hidden = !showInventory;
+    $("#scene").hidden = showInventory;
+    $("#battle-entry").hidden = showInventory;
     $("#show-chat").setAttribute("aria-pressed", String(!showInventory));
     $("#show-inventory").setAttribute("aria-pressed", String(showInventory));
     if (showInventory) inventory.refresh(true).catch((error) => inventory.showError(error));

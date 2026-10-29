@@ -5,6 +5,7 @@ export function setupScene(root, request, context, createId) {
   const tools=document.createElement('div');tools.className='map-tools';
   tools.innerHTML='<h3>Карта</h3><label>Заготовка<select class="map-template"></select></label><button type="button" class="map-load">Загрузить заготовку</button><button type="button" class="map-download">Скачать JSON заготовки</button><button type="button" class="map-schema">Скачать JSON Schema</button><details><summary>Карта от ИИ / импорт JSON</summary><p>Формат iirpg-map-v1: # стена, . пол, ~ трудная местность. Примеры доступны для скачивания.</p><input class="map-file" type="file" accept=".json,application/json"><textarea class="map-json" rows="8" spellcheck="false" placeholder="Вставьте JSON карты"></textarea><button type="button" class="map-import">Проверить и загрузить JSON</button></details><p>Клетка — 5 футов. Нажмите свободную клетку для перемещения, объект для выбора цели, противника для удара в бою.</p><div class="scene-map" aria-label="Карта сцены"></div><p class="map-status"></p>';
   q('.scene-zones').before(tools);
+  const battleLink=document.createElement('a');battleLink.href='/battle';battleLink.className='page-link scene-battle-link';battleLink.textContent='Открыть бой →';root.querySelector('details>summary').after(battleLink);
   function renderMap(){
     const wrapper=q('.scene-map');wrapper.replaceChildren();
     if(!state.map){q('.map-status').textContent='Загрузите карту из заготовки или JSON.';return;}
@@ -14,8 +15,8 @@ export function setupScene(root, request, context, createId) {
       const cell=document.createElement('button');cell.type='button';cell.className='map-cell '+(tile==='#'?'map-wall':tile==='~'?'map-difficult':'map-floor');
       const entities=state.entities.filter(e=>e.position?.[0]===x&&e.position?.[1]===y);
       cell.textContent=entities.map(e=>['actor','combatant'].includes(e.kind)?e.name.slice(0,1):e.posture==='overturned'?'▰':'▣').join('')||(tile==='~'?'≈':'');
-      cell.title=`[${x},${y}] `+entities.map(e=>e.name+(e.training_hp!==undefined?' · ОЗ '+e.training_hp:'')+(e.cover?' · укрытие':'')).join(', ');cell.setAttribute('aria-label',cell.title);cell.disabled=tile==='#'||busy;
-      cell.addEventListener('click',()=>{const obj=entities.find(e=>e.kind==='object');if(obj){q('.scene-target').value=obj.id;q('.map-status').textContent='Выбран объект: '+obj.name;}else if(battle?.status==='active'&&battle.mapped&&entities.some(e=>e.kind==='combatant'))send('battle_strike');else send('move_cell',{position:[x,y]});});grid.append(cell);
+      cell.title=`[${x},${y}] `+entities.map(e=>e.name+(e.training_hp!==undefined?' · ОЗ '+e.training_hp:'')+(e.cover?' · укрытие':'')+(e.surrendered?' · сдался':'')).join(', ');cell.setAttribute('aria-label',cell.title);cell.disabled=tile==='#'||busy||battle?.status==='active';
+      cell.addEventListener('click',()=>{const obj=entities.find(e=>e.kind==='object');const enemy=entities.find(e=>e.kind==='combatant'&&e.training_hp>0&&!e.surrendered);if(obj){q('.scene-target').value=obj.id;q('.map-status').textContent='Выбран объект: '+obj.name;}else send('move_cell',{position:[x,y]});});grid.append(cell);
     }));wrapper.append(grid);
   }
   async function load(document){if(confirm('Заменить карту? Объекты будут сброшены, персонажи перемещены ко входу, ожидающие намерения отменены.'))await send('load_map',document);}
@@ -35,16 +36,11 @@ export function setupScene(root, request, context, createId) {
     q('[data-action=move]').disabled=Boolean(state.map);
     q('.scene-effect option[value=move]').disabled=Boolean(state.map);
     q('.scene-zones').replaceChildren(...state.zones.map(zone=>{const card=document.createElement('article');const title=document.createElement('strong');title.textContent=zone.name;card.append(title);for(const entity of state.entities.filter(e=>e.zone_id===zone.id)){const row=document.createElement('p');row.textContent=entity.name+(entity.posture==='overturned'?' · опрокинут':'')+(entity.cover?' · укрытие +'+entity.cover.bonus:'');card.append(row);}return card;}));
-    root.querySelectorAll('button:not(.map-cell)').forEach(b=>b.disabled=busy);q('[data-action=move]').disabled=busy||Boolean(state.map);
+    root.querySelectorAll('button:not(.map-cell)').forEach(b=>b.disabled=busy||battle?.status==='active');q('[data-action=move]').disabled=busy||Boolean(state.map)||battle?.status==='active';
   }
-  async function refresh(){const c=context();if(!c.ready||busy||(retry&&loadedRoom===c.room))return;try{const [next,roster,maps,encounter]=await Promise.all([request(`/api/rooms/${c.room}/scene`),request(`/api/rooms/${c.room}/roster`),request("/api/maps"),request(`/api/rooms/${c.room}/combat`)]);battle=encounter;mapTemplates=maps.templates;options(q(".map-template"),mapTemplates.map(m=>[m.id,m.name]));if(c.generation!==context().generation)return;state=next;loadedRoom=c.room;retry=null;render(roster);}catch(e){q('.scene-error').textContent=e.message;}}
+  async function refresh(){const c=context();if(!c.ready||busy||(retry&&loadedRoom===c.room))return;try{const [next,roster,maps,encounter]=await Promise.all([request(`/api/rooms/${c.room}/scene`),request(`/api/rooms/${c.room}/roster`),request("/api/maps"),request(`/api/rooms/${c.room}/combat`)]);battle=encounter;mapTemplates=maps.templates;options(q(".map-template"),mapTemplates.map(m=>[m.id,m.name]));if(c.generation!==context().generation)return;state=next;loadedRoom=c.room;retry=null;battleLink.hash=new URLSearchParams({room:c.room,...(new URLSearchParams(location.hash.slice(1)).get('access')?{access:new URLSearchParams(location.hash.slice(1)).get('access')}:{})}).toString();render(roster);}catch(e){q('.scene-error').textContent=e.message;}}
   async function send(action,extra={}){const c=context();if(!c.ready||busy||!state||loadedRoom!==c.room)return;
-    if(battle?.status==='active'&&battle.mapped&&['move_cell','take_cover','battle_strike'].includes(action)){
-      if(battle.turn!==0){q('.scene-error').textContent='Сейчас ход противника.';return;}
-      const command={action:action==='move_cell'?'move':action==='battle_strike'?'strike':'take_cover',revision:battle.revision,...(action==='move_cell'?{position:extra.position}:{target_id:q('.scene-target').value})};
-      const body=JSON.stringify(command);if(retry?.body!==body)retry={body,id:createId()};busy=true;
-      try{await request(`/api/rooms/${c.room}/combat`,{method:'POST',body,headers:{'Idempotency-Key':retry.id}});retry=null;q('.scene-error').textContent='';window.dispatchEvent(new Event('iirpg-combat'));}catch(e){q('.scene-error').textContent=e.message;if(e.status&&e.status<500)retry=null;}finally{busy=false;await refresh();}return;
-    }
+    if(battle?.status==='active'){q('.scene-error').textContent='Бой идёт на отдельном экране. Перейдите по ссылке «Открыть бой».';return;}
     const payload={action,revision:state.revision,actor_id:q('.scene-actor').value};
     if(action==='load_map'||action==='move_cell')payload.parameters=extra;
     if(action==='move')payload.target_id=q('.scene-zone').value;
