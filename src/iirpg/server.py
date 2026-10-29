@@ -9,6 +9,7 @@ import re
 import secrets
 from urllib.parse import parse_qs, urlsplit
 
+from .combat import CombatStore
 from .application import ChatService
 from .character_sheet import DEFAULT_CHARACTER_RULES, CharacterRules
 from .commands import describe_commands
@@ -26,6 +27,7 @@ ROSTER_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/roster\Z")
 DEBUG_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/debug\Z")
 MAX_BODY_SIZE = 65536
 STATIC_FILES = {
+    "/combat.js": ("combat.js", "text/javascript; charset=utf-8"),
     "/": ("index.html", "text/html; charset=utf-8"),
     "/debug": ("debug.html", "text/html; charset=utf-8"),
     "/debug/": ("debug.html", "text/html; charset=utf-8"),
@@ -50,6 +52,7 @@ class ChatHTTPServer(ThreadingHTTPServer):
                  character_rules: CharacterRules | None = None) -> None:
         self.service = ChatService(ChatStore(database), dice)
         self.roster = RosterStore(self.service.store, inventory_rules or InventoryRules.load(), character_rules)
+        self.combat = CombatStore(self.roster, self.service.dice.roll_die)
         self.access_token = access_token
         super().__init__(address, ChatHandler)
 
@@ -144,6 +147,14 @@ class ChatHandler(BaseHTTPRequestHandler):
         if method == "GET" and route.path == "/api/gm/commands":
             self._json(200, describe_commands())
             return
+        combat_match = re.fullmatch(r"/api/rooms/([0-9a-f-]{36})/combat", route.path)
+        if combat_match:
+            if method == "GET":
+                self._json(200, self.server.combat.read(combat_match.group(1)))
+                return
+            if method == "POST":
+                self._json(200, self.server.combat.execute(combat_match.group(1), self._body(), self.headers.get("Idempotency-Key", "")))
+                return
         debug_match = DEBUG_ROUTE.fullmatch(route.path)
         if method == "GET" and debug_match:
             self._json(200, inspect_room(self.server.service, self.server.roster,

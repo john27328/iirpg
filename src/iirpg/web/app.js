@@ -1,3 +1,4 @@
+import { setupCombat } from "/combat.js";
 import { InventoryPanel } from "/inventory.js";
 import { DebugPanel } from "/debug.js";
 
@@ -674,6 +675,7 @@ class JsonStub {
 }
 
 const context = () => ({ room, generation, ready });
+if (!isDebug) setupCombat($("#combat"), request, context, createRequestId);
 const first = isDebug ? null : new Chat("first", "01", "Ваши действия и ответы ведущего");
 const stub = isDebug ? new JsonStub() : null;
 const debug = isDebug ? new DebugPanel($("#debug-inspector"), $("#debug-log"), request, context) : null;

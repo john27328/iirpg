@@ -46,9 +46,14 @@ Designing NPCs. Sources checked October 28, 2026:
 
 - https://2e.aonprd.com/Rules.aspx?ID=2027
 - https://2e.aonprd.com/Rules.aspx?ID=2039
+- https://2e.aonprd.com/Rules.aspx?ID=2045
 - https://2e.aonprd.com/Rules.aspx?ID=2051
 - https://2e.aonprd.com/Rules.aspx?ID=2053
 - https://2e.aonprd.com/Rules.aspx?ID=2874
+
+Optional edicts and anathema fields and Russian labels were added on
+October 29, 2026, based on Player Core p. 26. No alignment categories are
+introduced into the Remaster configuration.
 
 Configuration contains ability modifiers, proficiency ranks, PC check and
 AC formulas, and a profile for directly entered NPC stat blocks. No
@@ -67,3 +72,8 @@ license is claimed. Upstream declares no Expressly Designated Licensed Material.
 
 The original local English reference and its complete source manifest and
 notice remain in `data/pathfinder2e-remaster/` in the source repository.
+
+The mechanical parameters in `combat_pf2e.json` also fall under this notice:
+Player Core, Playing the Game, https://2e.aonprd.com/Rules.aspx?ID=2263,
+including checks, degrees of success, multiple attack penalty and turns.
+Training encounter presets are IIRPG-authored examples, not published creatures.
