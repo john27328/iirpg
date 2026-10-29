@@ -16,4 +16,4 @@ iirpg = "iirpg.server:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-iirpg = ["web/*", "rules/*.json", "rules/*.md", "rules/*.pdf"]
+iirpg = ["web/*", "rules/*.json", "rules/maps/*.json", "rules/*.md", "rules/*.pdf"]

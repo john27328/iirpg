@@ -77,3 +77,8 @@ The mechanical parameters in `combat_pf2e.json` also fall under this notice:
 Player Core, Playing the Game, https://2e.aonprd.com/Rules.aspx?ID=2263,
 including checks, degrees of success, multiple attack penalty and turns.
 Training encounter presets are IIRPG-authored examples, not published creatures.
+
+`scene_pf2e.json` uses the basic standard/greater cover bonus values from
+Player Core p. 418, https://2e.aonprd.com/Actions.aspx?ID=2307. The tavern,
+zone abstraction, movable table example and its DC are IIRPG-authored scenario
+material and adjudication choices, not copied official scenes or universal rules.

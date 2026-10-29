@@ -1,11 +1,13 @@
 """Administrative inspection of existing room entities and queue events."""
 
+from .scene import SceneStore
+from .combat import CombatStore
 from .application import ChatService
 from .commands import describe_commands
 from .roster_storage import RosterStore
 
 
-def inspect_room(service: ChatService, roster: RosterStore, room_id: str, after: int = 0) -> dict:
+def inspect_room(service: ChatService, roster: RosterStore, room_id: str, after: int = 0, combat: CombatStore | None = None, scene: SceneStore | None = None) -> dict:
     snapshot = service.store.inspect_page(room_id, after)
     state = roster.read(room_id)
     return {
@@ -13,6 +15,8 @@ def inspect_room(service: ChatService, roster: RosterStore, room_id: str, after:
         "revision": state["revision"],
         "entities": {
             "room": snapshot["room"],
+            "scene": scene.read(room_id) if scene else None,
+            "encounter": combat.read(room_id) if combat else None,
             "players": state["players"],
             "characters": [{key: value for key, value in character.items() if key != "items"}
                            for character in state["characters"]],

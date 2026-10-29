@@ -9,6 +9,7 @@ import re
 import secrets
 from urllib.parse import parse_qs, urlsplit
 
+from .scene import SceneStore
 from .combat import CombatStore
 from .application import ChatService
 from .character_sheet import DEFAULT_CHARACTER_RULES, CharacterRules
@@ -27,6 +28,7 @@ ROSTER_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/roster\Z")
 DEBUG_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/debug\Z")
 MAX_BODY_SIZE = 65536
 STATIC_FILES = {
+    "/scene.js": ("scene.js", "text/javascript; charset=utf-8"),
     "/combat.js": ("combat.js", "text/javascript; charset=utf-8"),
     "/": ("index.html", "text/html; charset=utf-8"),
     "/debug": ("debug.html", "text/html; charset=utf-8"),
@@ -53,6 +55,7 @@ class ChatHTTPServer(ThreadingHTTPServer):
         self.service = ChatService(ChatStore(database), dice)
         self.roster = RosterStore(self.service.store, inventory_rules or InventoryRules.load(), character_rules)
         self.combat = CombatStore(self.roster, self.service.dice.roll_die)
+        self.scene = SceneStore(self.roster, self.service.dice.roll_die)
         self.access_token = access_token
         super().__init__(address, ChatHandler)
 
@@ -147,6 +150,20 @@ class ChatHandler(BaseHTTPRequestHandler):
         if method == "GET" and route.path == "/api/gm/commands":
             self._json(200, describe_commands())
             return
+        if method == "GET" and route.path == "/api/maps/schema":
+            self._json(200, json.loads((DEFAULT_INVENTORY_RULES.parent / "map_schema.json").read_text()))
+            return
+        if method == "GET" and route.path == "/api/maps":
+            self._json(200, {"templates": self.server.scene.maps, "format": "iirpg-map-v1"})
+            return
+        scene_match = re.fullmatch(r"/api/rooms/([0-9a-f-]{36})/scene", route.path)
+        if scene_match:
+            if method == "GET":
+                self._json(200, self.server.scene.read(scene_match.group(1)))
+                return
+            if method == "POST":
+                self._json(200, self.server.scene.execute(scene_match.group(1), self._body(), self.headers.get("Idempotency-Key", "")))
+                return
         combat_match = re.fullmatch(r"/api/rooms/([0-9a-f-]{36})/combat", route.path)
         if combat_match:
             if method == "GET":
@@ -158,7 +175,7 @@ class ChatHandler(BaseHTTPRequestHandler):
         debug_match = DEBUG_ROUTE.fullmatch(route.path)
         if method == "GET" and debug_match:
             self._json(200, inspect_room(self.server.service, self.server.roster,
-                                        debug_match.group(1), self._cursor(route.query)))
+                                        debug_match.group(1), self._cursor(route.query), self.server.combat, self.server.scene))
             return
         roster_match = ROSTER_ROUTE.fullmatch(route.path)
         if roster_match:

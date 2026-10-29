@@ -1,6 +1,6 @@
 export function setupCombat(root, request, context, createId) {
   let state=null, busy=false, retry=null;
-  root.innerHTML='<details><summary>Учебный бой PF2e</summary><p>Меч и щит, экспертное владение. ОЗ листа сохраняются; при 0 ОЗ участник выбывает. Дистанция и реакции не моделируются.</p><select aria-label="Участник боя"></select><button type="button" data-action="start">Начать бой</button><div class="combat-state"></div><button type="button" data-action="strike">Удар мечом</button><button type="button" data-action="shield">Поднять щит</button><button type="button" data-action="end_turn">Закончить ход</button><button type="button" data-action="enemy_turn">Ход противника</button><pre class="combat-log"></pre><p class="combat-error" role="alert"></p></details>';
+  root.innerHTML='<details><summary>Учебный бой PF2e</summary><p>Меч и щит, экспертное владение. ОЗ листа сохраняются; при 0 ОЗ участник выбывает. На загруженной карте учитываются позиции, стены, движение и укрытие. Реакции пока не моделируются.</p><select aria-label="Участник боя"></select><button type="button" data-action="start">Начать бой</button><div class="combat-state"></div><button type="button" data-action="strike">Удар мечом</button><button type="button" data-action="shield">Поднять щит</button><button type="button" data-action="end_turn">Закончить ход</button><button type="button" data-action="enemy_turn">Ход противника</button><pre class="combat-log"></pre><p class="combat-error" role="alert"></p></details>';
   const select=root.querySelector('select'), error=root.querySelector('.combat-error');
   function render(){
     root.querySelectorAll('button').forEach(b=>b.disabled=busy||!state||(b.dataset.action==='start'?state.status==='active':state.status!=='active'||(b.dataset.action==='enemy_turn'?state.turn!==1:state.turn!==0)));
@@ -30,7 +30,7 @@ export function setupCombat(root, request, context, createId) {
       if(c.generation!==context().generation)return;
       state=result;retry=null;
     }catch(e){error.textContent=e.message;if(e.status&&e.status<500)retry=null;}
-    finally{busy=false;render();await refresh();}
+    finally{busy=false;render();await refresh();window.dispatchEvent(new Event('iirpg-combat'));}
   });
-  setInterval(refresh,2500);refresh();
+  window.addEventListener('iirpg-combat',refresh);setInterval(refresh,2500);refresh();
 }

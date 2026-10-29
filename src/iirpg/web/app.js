@@ -1,3 +1,4 @@
+import { setupScene } from "/scene.js";
 import { setupCombat } from "/combat.js";
 import { InventoryPanel } from "/inventory.js";
 import { DebugPanel } from "/debug.js";
@@ -192,6 +193,7 @@ class Chat {
     const label = document.createElement("span");
     label.className = "message-label";
     label.textContent = outgoing ? "Вы" : ({ first: "Игрок", second: "Ведущий" }[message.sender] || message.sender);
+    if (message.combat) label.textContent = `Бой · ${message.combat.actor || "Ведущий"}`;
     if (message.visibility.mode === "selected") label.textContent += " · Ограниченная видимость";
     const text = document.createElement("p");
     text.className = "message-text";
@@ -675,6 +677,7 @@ class JsonStub {
 }
 
 const context = () => ({ room, generation, ready });
+if (!isDebug) setupScene($("#scene"), request, context, createRequestId);
 if (!isDebug) setupCombat($("#combat"), request, context, createRequestId);
 const first = isDebug ? null : new Chat("first", "01", "Ваши действия и ответы ведущего");
 const stub = isDebug ? new JsonStub() : null;
