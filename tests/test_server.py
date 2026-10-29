@@ -90,6 +90,24 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(debug['requests'][0]['response']['model'], 'test/free')
             self.assertEqual(self.request(base + '/ai/npc/step', {**command, 'model': 'paid/model'}, headers)[0], 400)
 
+    def test_gm_analysis_http_proposes_before_rolling(self) -> None:
+        from test_gm_intents import GMClient
+        client = GMClient();client.choice = 'demoralize_nonlinguistic_1'
+        room = self.server.service.store.create_room();root = f'/api/rooms/{room}'
+        actor = self.server.roster.execute(room, {'action':'create_character', 'revision':0,
+            'data':{'name':'Герой', 'sheet':{'values':{'hp_max':20,'hp_current':20,'perception_other':100}}}}, str(uuid4()))['entity_id']
+        state = self.server.combat.execute(room, {'action':'start','revision':0,'character_id':actor}, str(uuid4()))
+        state = self.server.combat.execute(room, {'action':'intent','revision':state['revision'],'text':'Грозно кричу и бью мечом по щиту'}, str(uuid4()))
+        body = {'revision':state['revision'], 'intent_id':state['intents'][-1]['id']};headers = {'Idempotency-Key':str(uuid4())}
+        with patch.object(self.server.ai, 'client', client):
+            status, raw = self.request(root+'/ai/gm/intent', body, headers)
+            self.assertEqual(status, 200)
+            result = json.loads(raw)['combat'];self.assertEqual(result['actions'], state['actions'])
+            self.assertEqual(result['intents'][-1]['analysis']['effect'], 'demoralize')
+            self.assertEqual(self.request(root+'/ai/gm/intent', body, headers)[1], raw)
+            self.assertEqual(len(client.calls), 1)
+            self.assertEqual(self.request(root+'/ai/gm/intent', {'revision':True}, headers)[0], 400)
+
     def test_game_and_debug_pages_have_separate_components(self) -> None:
         game = self.request("/")[1].decode()
         debug = self.request("/debug")[1].decode()
@@ -123,6 +141,14 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(state['turn'], 0)
         self.assertEqual(state['preset_id'], 'forest_patrol')
         self.assertEqual(json.loads(self.request(f'/api/rooms/{room}/scene')[1])['map']['id'], 'forest_camp')
+        menu_path = path + '/actions'
+        status, raw_menu = self.request(menu_path + f"?revision={state['revision']}")
+        self.assertEqual(status, 200)
+        menu = json.loads(raw_menu)
+        self.assertEqual(menu['actor_id'], ids[0])
+        self.assertEqual([c['command']['action'] for c in menu['general']], ['shield', 'end_turn'])
+        self.assertEqual(menu['selected'], [])
+        self.assertEqual(self.request(menu_path + f"?revision={state['revision']}&x=1")[0], 400)
         headers = {'Idempotency-Key': str(uuid4())}
         command = {'action': 'intent', 'revision': state['revision'], 'actor_id': ids[0], 'text': 'Щит'}
         status, body = self.request(path, command, headers)
@@ -130,6 +156,9 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.request(path, command, headers)[1], body)
         state = json.loads(body)
         self.assertEqual(state['actions'], 2)
+        self.assertEqual(self.request(menu_path + '?revision=0')[0], 409)
+        current_menu = json.loads(self.request(menu_path + f"?revision={state['revision']}")[1])
+        self.assertEqual([c['command']['action'] for c in current_menu['general']], ['end_turn'])
         self.assertEqual(state['journal'][-1]['source_text'], 'Щит')
         wrong = {'action': 'intent', 'revision': state['revision'], 'actor_id': ids[1], 'text': 'Щит'}
         self.assertEqual(self.request(path, wrong, {'Idempotency-Key': str(uuid4())})[0], 400)
@@ -446,7 +475,9 @@ class AccessTests(unittest.TestCase):
                 roster_path = f"/api/rooms/{created['room_id']}/roster"
                 ai_path = f"/api/rooms/{created['room_id']}/ai/npc"
                 self.assertEqual(request(ai_path + '/context')[0], 401)
+                self.assertEqual(request(f"/api/rooms/{created['room_id']}/ai/gm/intent", payload={'revision':0,'intent_id':'x'})[0], 401)
                 self.assertEqual(request(ai_path + '/step', payload={'revision': 0})[0], 401)
+                self.assertEqual(request(f"/api/rooms/{created['room_id']}/combat/actions?revision=0")[0], 401)
                 self.assertEqual(request(roster_path)[0], 401)
                 self.assertEqual(request(roster_path, payload={})[0], 401)
                 self.assertEqual(request(roster_path, token)[0], 200)

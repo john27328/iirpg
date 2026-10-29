@@ -71,10 +71,10 @@ def can_see(state: dict, scene: dict | None, observer: int, target: int) -> bool
     return not state.get('mapped') or visible_position(state, scene, observer, state['fighters'][target]['position'])
 
 
-def can_hear(state: dict, scene: dict | None, observer: int, speaker: int) -> bool:
+def can_hear(state: dict, scene: dict | None, observer: int, speaker: int, require_language: bool = True) -> bool:
     if not active(state['fighters'][observer]) or not active(state['fighters'][speaker]):
         return False
-    if not set(state['fighters'][observer].get('languages', ['common'])) & set(state['fighters'][speaker].get('languages', ['common'])):
+    if require_language and not set(state['fighters'][observer].get('languages', ['common'])) & set(state['fighters'][speaker].get('languages', ['common'])):
         return False
     if not state.get('mapped'):
         return True
@@ -127,6 +127,7 @@ def observe(state: dict, scene: dict | None) -> None:
                 'position': deepcopy(other.get('position')), 'seen_round': state['round'],
                 'observed_turn': state.get('turns_elapsed', 0), 'source': 'seen',
                 'observed_revision': state['revision'],
+                'shaken': other.get('frightened', 0) > 0,
             }
         for contact in memory['contacts'].values():
             if state.get('mapped') and contact['id'] not in visible_ids and contact.get('position') and visible_position(state, scene, observer, contact['position']):

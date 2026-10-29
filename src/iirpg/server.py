@@ -167,6 +167,10 @@ class ChatHandler(BaseHTTPRequestHandler):
         if method == 'GET' and route.path == '/api/combat/presets':
             self._json(200, {'presets': self.server.combat.presets})
             return
+        gm_intent_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/ai/gm/intent', route.path)
+        if method == 'POST' and gm_intent_match:
+            self._json(200, self.server.ai.analyze_intent(gm_intent_match.group(1), self._body(), self.headers.get('Idempotency-Key', '')))
+            return
         ai_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/ai/npc/(context|step)', route.path)
         if ai_match:
             if method == 'GET' and ai_match.group(2) == 'context':
@@ -189,6 +193,14 @@ class ChatHandler(BaseHTTPRequestHandler):
             if method == "POST":
                 self._json(200, self.server.scene.execute(scene_match.group(1), self._body(), self.headers.get("Idempotency-Key", "")))
                 return
+        actions_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/combat/actions', route.path)
+        if method == 'GET' and actions_match:
+            query = parse_qs(route.query)
+            if set(query) - {'revision', 'x', 'y', 'target_id'} or 'revision' not in query or ('x' in query) != ('y' in query):
+                raise ValueError('Нужна revision; клетка задаётся парой x,y.')
+            position = [int(query['x'][0]), int(query['y'][0])] if 'x' in query else None
+            self._json(200, self.server.combat.actions(actions_match.group(1), int(query['revision'][0]), position, query.get('target_id', [None])[0]))
+            return
         combat_match = re.fullmatch(r"/api/rooms/([0-9a-f-]{36})/combat", route.path)
         if combat_match:
             if method == "GET":

@@ -1,0 +1,26 @@
+{
+  "id": "pf2e-remaster-demoralize",
+  "edition": "Pathfinder Second Edition Remaster",
+  "license": "ORC",
+  "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2395",
+  "condition_source_url": "https://2e.aonprd.com/Conditions.aspx?ID=76",
+  "cost": 1,
+  "range_feet": 30,
+  "dc_base": 10,
+  "language_penalty": -4,
+  "immunity_rounds": 100,
+  "success_frightened": 1,
+  "critical_frightened": 2,
+  "description": "Запугивание против КС Воли. Непонятная речь или звуки без языка дают штраф. Независимо от результата цель невосприимчива к повторной попытке того же участника 10 минут игрового времени. Испуг снижает проверки и КС и уменьшается на 1 в конце собственного хода.",
+  "targeting": {
+    "mode": "single",
+    "kind": "creature",
+    "max_targets": 1
+  },
+  "outcomes": {
+    "critical_success": "Испуган 2.",
+    "success": "Испуган 1.",
+    "failure": "Испуг не накладывается.",
+    "critical_failure": "Как провал: дополнительного последствия нет."
+  }
+}

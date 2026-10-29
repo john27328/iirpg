@@ -14,6 +14,11 @@ from .combat_map import distance, move_fighter, approach, route
 from .maps import zone_at, templates, install_map
 from .combat_intents import parse_intent
 from .scene_rules import perform_action, initial_scene
+from .combat_actions import available_actions, strike_target, cover_target
+from .combat_conditions import armor_class, status_penalty
+from .demoralize import demoralize
+from .gm_context import describe_proposal
+from .intent_dialogue import append_message
 from .combat_tactics import (active, communicate, may_surrender,
                              observe, remember_event, target_index, team)
 
@@ -24,6 +29,7 @@ class CombatStore:
         self.rules = json.loads((Path(__file__).with_name('rules') / 'combat_pf2e.json').read_text())
         self.maps = {m['id']: m for m in templates()}
         self.scene_rules = json.loads((Path(__file__).with_name('rules') / 'scene_pf2e.json').read_text())
+        self.skill_rules = json.loads((Path(__file__).with_name('rules') / 'demoralize_pf2e.json').read_text())
         self.presets = json.loads((Path(__file__).with_name('rules') / 'battle_presets.json').read_text())
         seen_presets = set()
         for preset in self.presets:
@@ -43,12 +49,40 @@ class CombatStore:
             row = c.execute('SELECT body FROM encounters WHERE room_id=?', (room,)).fetchone()
         return json.loads(row[0]) if row else {'revision': 0, 'status': 'idle', 'rules': self.rules}
 
+    def hydrate_skills(self, state: dict, roster: dict) -> None:
+        from .character_sheet import CharacterRules
+        state.setdefault('skill_rules', deepcopy(self.skill_rules))
+        for key in ('targeting', 'outcomes'):
+            state['skill_rules'].setdefault(key, deepcopy(self.skill_rules[key]))
+        for fighter in state.get('fighters', []):
+            if 'character_id' in fighter:
+                character = next((a for a in roster['characters'] if a['id'] == fighter['character_id']), None)
+                stats = CharacterRules(roster['character_rules']).statistics(character['sheet'], character['attributes']) if character else {}
+            else:
+                stats = self.rules['opponent']
+            for key in ('will', 'intimidation'):
+                if key in stats: fighter.setdefault(key, stats[key])
+
+    def actions(self, room: str, revision: int, position: list[int] | None = None, target_id: str | None = None) -> dict:
+        with self.store._connection() as c:
+            c.execute('BEGIN')
+            self.store._require_room(c, room)
+            row = c.execute('SELECT body FROM encounters WHERE room_id=?', (room,)).fetchone()
+            state = json.loads(row[0]) if row else {'revision': 0, 'status': 'idle'}
+            if type(revision) is not int or revision != state['revision']:
+                raise MessageConflict('Бой изменился. Обновите страницу.')
+            scene_row = c.execute('SELECT body FROM scenes WHERE room_id=?', (room,)).fetchone() if c.execute("SELECT 1 FROM sqlite_master WHERE name='scenes'").fetchone() else None
+            scene = json.loads(scene_row[0]) if scene_row else None
+            roster = self.roster._load(c, room) if state['status'] == 'active' else None
+            if roster: self.hydrate_skills(state, roster)
+            return available_actions(state, scene, roster, position, target_id)
+
     def execute(self, room: str, command: dict, request_id: str) -> dict:
         try:
             UUID(request_id)
         except (ValueError, TypeError, AttributeError):
             raise ValueError('Нужен UUID Idempotency-Key.') from None
-        if set(command) - {'action', 'revision', 'character_id', 'character_ids', 'actor_id', 'position', 'target_id', 'group_id', 'preset_id', 'text', 'intent_id', 'effect'}:
+        if set(command) - {'action', 'revision', 'character_id', 'character_ids', 'actor_id', 'position', 'target_id', 'group_id', 'preset_id', 'text', 'intent_id', 'effect', 'summary', 'delivery', 'review', 'requested_action'}:
             raise ValueError('Неизвестные поля боя.')
         encoded = json.dumps(command, sort_keys=True, allow_nan=False)
         with self.store._connection() as c:
@@ -79,7 +113,7 @@ class CombatStore:
                 fighters = before.get('fighters') or []
                 actor_index = before.get('turn')
                 actor = fighters[actor_index]['name'] if fighters else None
-                victim = state['last_attack']['target_index'] if kind == 'strike' else None
+                victim = state['last_attack']['target_index'] if kind == 'strike' else state['last_check']['target_index'] if kind == 'demoralize' else None
                 event = {'action': kind, 'command': input_action, 'actor': actor,
                          'target': fighters[victim]['name'] if victim is not None else None,
                          'actor_index': actor_index if fighters else None,
@@ -91,8 +125,10 @@ class CombatStore:
                     event['intent_id'] = resolved_intent['id']
                 if kind == 'strike':
                     event['roll'] = deepcopy(state['last_attack'])
+                if kind == 'demoralize':
+                    event['check'] = deepcopy(state['last_check'])
                 events.append({'text': text, 'details': event})
-                if fighters and kind not in ('intent', 'reject_intent'):
+                if fighters and kind not in ('intent', 'clarify_intent', 'reject_intent', 'offer_intent'):
                     remember_event(state, scene, kind, actor_index, victim)
 
             def report_orders() -> None:
@@ -169,6 +205,7 @@ class CombatStore:
                 state = {'revision': state['revision'], 'id': encounter_id, 'status': 'active', 'rules': self.rules,
                          'fighters': fighters, 'turn': order[0], 'initiative_order': order, 'round': 1,
                          'actions': self.rules['actions'], 'attacks': 0, 'log': [], 'intents': [], 'journal': [], 'group_id': group_id, 'group_name': group['name']}
+                self.hydrate_skills(state, roster)
                 if preset:
                     state['preset_id'] = preset['id']
                     state['preset_name'] = preset['name']
@@ -213,26 +250,43 @@ class CombatStore:
                 if state['status'] != 'active':
                     raise ValueError('Нет активного боя.')
                 rules = state['rules']
+                roster = self.roster._load(c, room)
+                self.hydrate_skills(state, roster)
                 turn = state['turn']
                 actor_id = state['fighters'][turn].get('entity_id', f'fighter:{turn}')
                 if 'actor_id' in command and command['actor_id'] != actor_id:
                     raise ValueError('Сейчас ход другого участника. Обновите состояние боя.')
                 if state.get('mapped') and (not scene or 'map' not in scene):
                     raise ValueError('Карта боя недоступна.')
-                if action in ('intent', 'resolve_intent') and team(state, turn) != 'players':
+                if action in ('intent', 'clarify_intent', 'resolve_intent', 'offer_intent', 'accept_intent') and team(state, turn) != 'players':
                     raise ValueError('Текстовое действие сейчас может заявить только активный герой.')
                 if action == 'intent':
                     source_text = command.get('text')
                     parsed = parse_intent(source_text, state, scene, command.get('target_id'))
-                    if parsed:
+                    if 'review' in command and type(command['review']) is not bool:
+                        raise ValueError('review должен быть логическим значением.')
+                    if parsed and not command.get('review'):
                         command = parsed
                         action = parsed['action']
-                elif action == 'resolve_intent':
+                elif action in ('clarify_intent', 'resolve_intent', 'offer_intent', 'accept_intent'):
                     resolved_intent = next((i for i in state.get('intents', []) if i['id'] == command.get('intent_id') and i['status'] == 'pending'), None)
                     if not resolved_intent or resolved_intent['actor_id'] != actor_id:
                         raise ValueError('Намерение должно ожидать решения и принадлежать активному герою.')
-                    action = command.get('effect')
-                    if action not in ('strike', 'shield', 'move', 'take_cover', 'tip_over', 'end_turn', 'reject_intent'):
+                    if action == 'accept_intent':
+                        proposal = resolved_intent.get('analysis')
+                        if not proposal or proposal['effect'] in ('manual','need_target'):
+                            raise ValueError('Сначала получите предложение реализуемого действия.')
+                        offered = {'effect': proposal['effect'], **proposal['command'], 'summary': proposal['summary']}
+                        current = describe_proposal(state, scene, roster, offered)
+                        def mechanical_check(value):
+                            return {k:v for k,v in (value or {}).items() if k not in ('targeting','outcomes')}
+                        if mechanical_check(current.get('check')) != mechanical_check(proposal.get('check')):
+                            raise ValueError('Условия проверки изменились. Разберите намерение заново.')
+                        command = offered
+                        action = proposal['effect']
+                    elif action == 'resolve_intent':
+                        action = command.get('effect')
+                    if action not in ('clarify_intent', 'offer_intent', 'strike', 'shield', 'move', 'take_cover', 'tip_over', 'end_turn', 'reject_intent', 'demoralize'):
                         raise ValueError('Выберите реализуемое действие или отклоните намерение.')
                     source_text = resolved_intent['text']
                 snapshot_before = snapshot()
@@ -241,10 +295,38 @@ class CombatStore:
                     if len(intents) >= 200:
                         raise ValueError('Достигнут лимит намерений этого боя.')
                     intent = {'id': str(uuid4()), 'actor_id': actor_id, 'actor_name': state['fighters'][turn]['name'],
-                              'text': source_text.strip(), 'status': 'pending', 'round': state['round']}
+                              'text': source_text.strip(), 'status': 'pending', 'round': state['round'],
+                              'selected_target_id': command.get('target_id'), 'selected_position': command.get('position')}
+                    intent['messages'] = [{'role': 'user', 'text': source_text.strip()}]
+                    if command.get('requested_action') is not None:
+                        requested = command['requested_action']
+                        if not isinstance(requested, dict) or set(requested) - {'action','target_id','position','delivery'} or requested.get('action') not in ('strike','move','shield','take_cover','tip_over','demoralize','end_turn'):
+                            raise ValueError('Нужна поддерживаемая команда действия.')
+                        describe_proposal(state, scene, roster, {'effect': requested['action'], **{k:v for k,v in requested.items() if k!='action'}})
+                        intent['requested_action'] = deepcopy(requested)
                     intents.append(intent)
                     record('intent', intent['actor_name'] + ': «' + intent['text'] + '» — ожидает решения ведущего; действия не потрачены.', before)
                     events[-1]['details']['intent_id'] = intent['id']
+                elif action == 'clarify_intent':
+                    text = command.get('text')
+                    append_message(resolved_intent, 'user', text)
+                    resolved_intent.pop('analysis', None)
+                    resolved_intent.pop('requested_action', None)
+                    if 'target_id' in command:resolved_intent['selected_target_id'] = command['target_id']
+                    if 'position' in command:resolved_intent['selected_position'] = command['position']
+                    record('clarify_intent', resolved_intent['actor_name'] + ' уточняет: «' + text.strip() + '» — предложение нужно разобрать заново; действия не потрачены.', before)
+                elif action == 'offer_intent':
+                    if not isinstance(command.get('summary'), str) or len(command['summary']) > 400:
+                        raise ValueError('Объяснение предложения должно быть строкой до 400 символов.')
+                    proposal = describe_proposal(state, scene, roster, command)
+                    append_message(resolved_intent, 'assistant', proposal['summary'], proposal)
+                    resolved_intent['analysis'] = proposal
+                    check = proposal.get('check')
+                    detail = (f"Запугивание {check['modifier']:+d} против КС Воли {check['dc']}, цель {check['target_name']}, одно действие; бросок ожидает подтверждения."
+                              if check else 'Предложение ожидает решения игрока.' if proposal['effect'] not in ('manual','need_target') else 'Уточните замысел или цель.')
+                    record('offer_intent', 'ИИ-ведущий: ' + proposal['summary'] + ' ' + detail, before)
+                elif action == 'demoralize':
+                    record('demoralize', demoralize(state, scene, command.get('target_id'), command.get('delivery','speech'), self.roll_die), before)
                 elif action == 'reject_intent':
                     if not resolved_intent:
                         raise ValueError('Отклоняйте намерение через resolve_intent.')
@@ -255,11 +337,8 @@ class CombatStore:
                     if not state.get('mapped'):raise ValueError('Бой не связан с картой.')
                     record('move', move_fighter(state,scene,command.get('position')), before)
                 elif action == 'take_cover':
-                    if not state.get('mapped') or state['actions']<=0:raise ValueError('Нельзя занять укрытие.')
-                    target=next((e for e in scene['entities'] if e['kind']=='object' and e['id']==command.get('target_id')),None)
+                    target = cover_target(state, scene, command.get('target_id'))
                     fighter=state['fighters'][turn]
-                    if not target or not target['provides_cover'] or distance(fighter['position'],target['position'])!=1:
-                        raise ValueError('Рядом должно быть подходящее укрытие.')
                     fighter['cover']={'object_id':target['id'],'bonus':scene['rules']['cover_bonus']}
                     state['actions']-=1
                     record('take_cover',fighter['name']+' занимает укрытие.',before)
@@ -269,7 +348,7 @@ class CombatStore:
                         raise ValueError('Для опрокидывания нужны действие и герой на карте.')
                     entity = next(e for e in scene['entities'] if e['id'] == actor_id)
                     result = perform_action(scene, entity, 'tip_over', command.get('target_id'), None,
-                                            self.roster._load(c, room), self.roll_die)
+                                            roster, self.roll_die, check_penalty=status_penalty(fighter))
                     fighter['cover'] = None
                     state['actions'] -= 1
                     record('tip_over', result['text'], before)
@@ -317,8 +396,9 @@ class CombatStore:
                         report_orders()
                 else:
                     raise ValueError('Недопустимое действие.')
-                if resolved_intent:
+                if resolved_intent and action not in ('offer_intent', 'clarify_intent'):
                     resolved_intent.update(status='rejected' if action == 'reject_intent' else 'resolved', effect=action)
+                    if action == 'demoralize':resolved_intent['check_result'] = deepcopy(state['last_check'])
             if state.get('mapped'):
                 for fighter in state['fighters']:
                     entity=next((e for e in scene['entities'] if e['id']==fighter['entity_id']),None)
@@ -346,6 +426,8 @@ class CombatStore:
             return state
 
     def end_turn(self, state: dict) -> None:
+        previous = state['fighters'][state['turn']]
+        if previous.get('frightened', 0):previous['frightened'] -= 1
         order = state.get('initiative_order', list(range(len(state['fighters']))))
         current = order.index(state['turn'])
         for step in range(1, len(order)+1):
@@ -360,17 +442,13 @@ class CombatStore:
         state['fighters'][state['turn']]['shield'] = False
 
     def strike(self, state: dict, victim_id: str | None = None) -> str:
-        if state['actions'] <= 0:
-            raise ValueError('Действия закончились.')
-        victim = target_index(state, victim_id)
+        victim = strike_target(state, victim_id)
         attacker, target = state['fighters'][state['turn']], state['fighters'][victim]
-        if state.get('mapped') and distance(attacker['position'],target['position'])!=1:
-            raise ValueError('Цель вне досягаемости: подойдите на соседнюю клетку.')
         attacker['cover']=None
         penalty = state['rules']['map'][min(state['attacks'], 2)]
         natural = self.roll_die(20)
-        total = natural + attacker['attack'] + penalty
-        dc = target['ac'] + max(state['rules']['shield_bonus'] if target['shield'] else 0, (target.get('cover') or {}).get('bonus',0))
+        total = natural + attacker['attack'] + penalty - status_penalty(attacker)
+        dc = armor_class(state, target)
         outcome = degree(natural, total, dc)
         damage_roll = self.roll_die(attacker['damage_die']) if outcome >= 2 else 0
         damage = max(0, damage_roll + attacker['damage_bonus']) * (2 if outcome == 3 else 1) if outcome >= 2 else 0

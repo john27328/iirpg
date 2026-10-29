@@ -87,3 +87,11 @@ material and adjudication choices, not copied official scenes or universal rules
 зрения/слышимости, протокол коротких докладов, устаревание приказов и условия
 сдачи являются авторскими параметрами пространственного прототипа. Они не
 заменяют полные правила обнаружения, общения или бюджета столкновений PF2e.
+
+`demoralize_pf2e.json` and the condition adjustments use Player Core (2023),
+Demoralize p. 240 (https://2e.aonprd.com/Actions.aspx?ID=2395) and Frightened
+p. 444 (https://2e.aonprd.com/Conditions.aspx?ID=76), checked October 29, 2026.
+IIRPG contributors adapted the parameters, Russian labels, and bounded
+training implementation. NPC Will/Intimidation numbers are authored training
+profiles, not copied creature statistics. The combat round timer for temporary
+immunity is a simulation choice, not a replacement for tracking exploration time.

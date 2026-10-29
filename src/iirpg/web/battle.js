@@ -6,7 +6,8 @@ let presets=[],selectedPreset=null;
 let refreshEpoch=null;
 let lastRoom=null,selectedPosition=null,targetId='',objectId='',cellSize=44,draftActor=null;
 let chosenHeroes=new Set(),partyKey='',mapKey='',queueKey='',journalKey='',intentsKey='';
-let lastActiveId=null;
+let lastActiveId=null,selectedThread=null;
+let actionMenu=null,actionMenuKey='',actionMenuBase='',actionPendingKey='',actionFailedKey='',actionMenuError='';
 const side=(f,i)=>f.team||(i===0?'players':'enemies');
 const living=f=>f.hp>0&&!f.surrendered;
 const active=()=>battle?.fighters?.[battle.turn];
@@ -15,10 +16,10 @@ const playerTurn=()=>battle?.status==='active'&&side(active(),battle.turn)==='pl
 const enemyTurn=()=>battle?.status==='active'&&!playerTurn();
 const canAct=()=>session.ready&&!busy&&!retry&&playerTurn();
 const session=createRoomSession(async()=>{
-  if(lastRoom!==session.room){lastRoom=session.room;retry=null;chosenHeroes=new Set();battle=null;scene=null;roster=null;selectedPosition=null;selectedPreset=null;targetId='';objectId='';draftActor=null;q('#intent-text').value='';partyKey=mapKey=queueKey=journalKey=intentsKey='';q('#action-error').hidden=true;q('#battle-preparation').open=true;}
+  if(lastRoom!==session.room){lastRoom=session.room;selectedThread=null;retry=null;chosenHeroes=new Set();battle=null;scene=null;roster=null;selectedPosition=null;selectedPreset=null;targetId='';objectId='';draftActor=null;q('#intent-text').value='';partyKey=mapKey=queueKey=journalKey=intentsKey='';q('#action-error').hidden=true;q('#battle-preparation').open=true;}
   await refresh();
 });
-const actionNames={start:'Начало боя',strike:'Удар',move:'Перемещение',shield:'Щит',take_cover:'Укрытие',tip_over:'Объект',end_turn:'Конец хода',communicate:'Переговоры',surrender:'Сдача',intent:'Намерение',reject_intent:'Решение ведущего',wait:'Ожидание'};
+const actionNames={start:'Начало боя',strike:'Удар',move:'Перемещение',shield:'Щит',take_cover:'Укрытие',tip_over:'Объект',end_turn:'Конец хода',communicate:'Переговоры',surrender:'Сдача',intent:'Намерение',clarify_intent:'Уточнение',offer_intent:'Предложение ИИ',demoralize:'Деморализация',reject_intent:'Решение ведущего',wait:'Ожидание'};
 function showError(message){q('#action-error').textContent=message;q('#action-error').hidden=!message;}
 function options(select,entries,desired){
   const fingerprint=JSON.stringify(entries);
@@ -63,7 +64,7 @@ function renderQueue(){
     const top=node('div','initiative-top');top.append(node('b','',current?'СЕЙЧАС':side(f,i)==='players'?'ГЕРОЙ':'ПРОТИВНИК'),node('b','',String(f.initiative)));
     const name=node('strong','',f.name);name.title=f.name;
     const owner=f.player_name?`${f.player_name} · `:'';
-    li.append(top,name,node('span','',`${owner}${f.hp}/${f.max_hp} ОЗ${f.surrendered?' · сдался':!f.hp?' · выбыл':''}`));
+    li.append(top,name,node('span','',`${owner}${f.hp}/${f.max_hp} ОЗ${f.frightened?' · Испуган '+f.frightened:''}${f.surrendered?' · сдался':!f.hp?' · выбыл':''}`));
     const hp=node('div','hp-track'),fill=document.createElement('i');fill.style.width=`${Math.max(0,100*f.hp/f.max_hp)}%`;hp.append(fill);li.append(hp);return li;
   }));
   const queue=q('#initiative-queue'),current=queue.querySelector('[aria-current=step]');
@@ -84,8 +85,8 @@ function renderActive(){
   q('#active-controller').textContent=f?(side(f,battle.turn)==='players'?`Управляет: ${f.player_name||'вы · вся группа'}`:'Управление: ИИ или обычная тактика'):'';
   q('#active-vitals').replaceChildren();q('#action-points').replaceChildren();
   if(!f)return;
-  q('#active-vitals').append(node('div','vitals-main',`${f.hp} / ${f.max_hp} ОЗ · КБ ${f.ac}`));
-  const tags=node('div','vital-tags');if(f.shield)tags.append(node('span','','Щит поднят'));if(f.cover)tags.append(node('span','',`Укрытие +${f.cover.bonus}`));if(f.surrendered)tags.append(node('span','','Сдался'));q('#active-vitals').append(tags);
+  q('#active-vitals').append(node('div','vitals-main',`${f.hp} / ${f.max_hp} ОЗ · КБ ${f.ac-(f.frightened||0)+Math.max(f.shield?battle.rules.shield_bonus:0,f.cover?.bonus||0)}`));
+  const tags=node('div','vital-tags');if(f.frightened)tags.append(node('span','',`Испуган ${f.frightened}`));if(f.shield)tags.append(node('span','','Щит поднят'));if(f.cover)tags.append(node('span','',`Укрытие +${f.cover.bonus}`));if(f.surrendered)tags.append(node('span','','Сдался'));q('#active-vitals').append(tags);
   if(battle.status==='active'){
     for(let i=0;i<3;i++)q('#action-points').append(node('span',i<battle.actions?'':'spent','◆'));
     q('#action-points').append(node('span','action-caption',`${battle.actions} действия · штраф атаки ${battle.rules.map[Math.min(battle.attacks,2)]}`));
@@ -105,7 +106,7 @@ function renderMap(){
     const object=scene.entities.find(e=>e.kind==='object'&&e.position?.[0]===x&&e.position?.[1]===y);
     const f=here.find(living)||here[0];
     const cell=node('button',`battle-cell ${tile==='#'?'wall':tile==='~'?'difficult':''}`);cell.type='button';cell.dataset.position=`${x},${y}`;
-    const parts=[`[${x},${y}]`,...(here.map(f=>`${f.name} · ${f.hp} ОЗ${f.surrendered?' · сдался':''}`)),...(object?[object.name]:[])];
+    const parts=[`[${x},${y}]`,...(here.map(f=>`${f.name} · ${f.hp} ОЗ${f.frightened?' · Испуган '+f.frightened:''}${f.surrendered?' · сдался':''}`)),...(object?[object.name]:[])];
     cell.title=parts.join(' ');cell.setAttribute('aria-label',cell.title);cell.disabled=tile==='#'||busy||!!retry;
     if(selectedPosition?.[0]===x&&selectedPosition?.[1]===y)cell.classList.add('selected');
     if(f?.entity_id===targetId&&living(f))cell.classList.add('targeted');
@@ -115,13 +116,10 @@ function renderMap(){
     else if(tile==='~')cell.append(node('span','','≈'));
     cell.append(node('span','map-coord',`${x},${y}`));
     cell.addEventListener('click',()=>{
-      const current=active();selectedPosition=null;
-      if(f&&living(f)){
-        if(current&&side(f,f.index)!==side(current,battle.turn)){targetId=f.entity_id;q('#battle-target').value=targetId;q('#map-selection').textContent=`Цель: ${f.name} · ${f.hp}/${f.max_hp} ОЗ. Для атаки нажмите «Удар».`;}
-        else q('#map-selection').textContent=`${f.name} · ${side(f,f.index)==='players'?'ваша группа':'противник'}. Текущий участник определяется очередью ходов.`;
-      }else if(object){objectId=object.id;q('#battle-object').value=objectId;q('#map-selection').textContent=`Объект: ${object.name}${object.provides_cover?' · предоставляет укрытие':''}.`;}
-      else{selectedPosition=[x,y];q('#map-selection').textContent=`Назначение: [${x},${y}] · перемещение стоит одно действие. Доступность пути проверит движок.`;}
-      renderMap();renderControls();
+      const current=active();selectedPosition=[x,y];
+      objectId=object?.id||'';targetId=f&&living(f)&&current&&side(f,f.index)!==side(current,battle.turn)?f.entity_id:'';
+      q('#map-selection').textContent=`Клетка [${x},${y}]`+(here.length?' · '+here.map(f=>f.name).join(', '):object?' · '+object.name:'');
+      renderMap();renderControls();renderIntents();
     });grid.append(cell);
   }));wrapper.append(grid);wrapper.scrollLeft=scroll.left;wrapper.scrollTop=scroll.top;
   if(focus)grid.querySelector(`[data-position="${focus}"]`)?.focus({preventScroll:true});
@@ -143,25 +141,104 @@ function renderJournal(){
   if(!entries.length&&!log.children.length)log.append(node('p','muted','Здесь появятся действия, броски и переговоры участников.'));
   log.scrollTop=following?log.scrollHeight:scroll;
 }
+function aiReady(){return ai?.configured&&ai.requests_today<ai.daily_request_limit;}
+function analyzeIntent(intent,useSelection=true){
+  if(!canAct()||intent.actor_id!==actorId()||!aiReady())return;
+  return submitOperation({path:`/api/rooms/${session.room}/ai/gm/intent`,body:JSON.stringify({revision:battle.revision,intent_id:intent.id,...(useSelection&&targetId?{target_id:targetId}:{})}),id:createId(),epoch:session.generation,room:session.room,ai:true});
+}
 function renderIntents(){
-  const intents=battle?.intents||[],fingerprint=JSON.stringify(intents);
+  const intents=battle?.intents||[],fingerprint=JSON.stringify([intents,canAct(),actorId(),aiReady(),targetId,busy]);
   if(fingerprint!==intentsKey){intentsKey=fingerprint;const root=q('#pending-intents');root.replaceChildren(...intents.slice(-12).reverse().map(i=>{
-    const card=node('article',`intent-card ${i.status}`);card.append(node('span','',`${i.actor_name} · раунд ${i.round}`),node('p','',i.text),node('span','',i.status==='pending'?'Ожидает решения · действия не потрачены':i.status==='rejected'?'Отклонено':'Исполнено: '+(actionNames[i.effect]||i.effect)));return card;
-  }));if(!intents.length)root.append(node('p','muted','Свободные описания действий сохраняются здесь до решения ведущего.'));}
+    const card=node('article',`intent-card ${i.status}`);card.dataset.intentId=i.id;
+    card.append(node('span','',`${i.actor_name} · раунд ${i.round}`),node('p','',i.text),node('span','',i.status==='pending'?'Ожидает решения · действия не потрачены':i.status==='rejected'?'Отклонено':'Исполнено: '+(actionNames[i.effect]||i.effect)));
+    const history=i.messages||[{role:'user',text:i.text}];
+    if(history.length>1){const dialogue=node('div','intent-dialogue');
+      for(const m of history.slice(1))dialogue.append(node('p',m.role==='user'?'dialogue-user':'dialogue-gm',`${m.role==='user'?'Вы':'Ведущий'}: ${m.text}`));
+      card.append(dialogue);
+    }
+    const proposal=i.analysis;
+    if(proposal){
+      if(history.at(-1)?.role!=='assistant')card.append(node('p','intent-analysis',proposal.summary));
+      if(proposal.check){const c=proposal.check;
+        card.append(node('p','intent-check',`${c.label} ${c.modifier>=0?'+':''}${c.modifier} против КС Воли ${c.dc} · ${c.target_name} · ◆ ${c.cost}`));
+        if(c.language_penalty)card.append(node('p','input-help',`Штраф ${c.language_penalty}: без понятных цели слов.`));
+        card.append(node('p','input-help','Успех: Испуган 1; критический успех: Испуган 2. Провал и критический провал: испуга нет. Повторная попытка этого героя недоступна 10 минут при любом результате.'));
+      }else if(!['manual','need_target'].includes(proposal.effect))card.append(node('p','',`${proposal.label} · ◆ ${proposal.cost}`));
+    }
+    if(i.status==='pending'){
+      const own=canAct()&&i.actor_id===actorId();
+      if(proposal&&!['manual','need_target'].includes(proposal.effect)){
+        const accept=node('button','confirm-intent',proposal.check?'Бросить Запугивание':'Выполнить предложение');accept.type='button';accept.disabled=!own;
+        accept.addEventListener('click',()=>send('accept_intent',{intent_id:i.id}));card.append(accept);
+      }
+      const analyze=node('button','analyze-intent',busy?'Выполняется запрос…':proposal?'Разобрать заново'+(targetId?' с выбранной целью':''):'Разобрать ИИ');analyze.type='button';analyze.disabled=!own||!aiReady();
+      analyze.addEventListener('click',()=>analyzeIntent(i));card.append(analyze);
+      const clarify=node('button','clarify-intent','Уточнить / спросить');clarify.type='button';clarify.disabled=!own;clarify.addEventListener('click',()=>{selectedThread=i.id;q('#intent-thread').value=i.id;q('#intent-text').placeholder='Уточните замысел или задайте вопрос ведущему…';q('#intent-text').focus();});card.append(clarify);
+      if(!aiReady())card.append(node('p','input-help','Разбор ИИ недоступен: проверьте ключ и дневной лимит. Намерение сохранено.'));
+    }
+    return card;
+  }));if(!intents.length)root.append(node('p','muted','ИИ разбирает свободное описание и предлагает действие. Бросок — после вашего подтверждения.'));}
   const pending=intents.filter(i=>i.status==='pending');q('#intentions-count').textContent=String(pending.length);
   options(q('#resolve-intent'),pending.filter(i=>i.actor_id===actorId()).map(i=>[i.id,`${i.actor_name}: ${i.text.slice(0,70)}`]),q('#resolve-intent').value);
+  const threads=pending.filter(i=>i.actor_id===actorId());
+  if(selectedThread!==''&&!threads.some(i=>i.id===selectedThread))selectedThread=threads.at(-1)?.id||'';
+  const desired=selectedThread;
+  options(q('#intent-thread'),[['','Новое действие'],...threads.map(i=>[i.id,'Уточнить: '+i.text.slice(0,55)])],desired);
+}
+function baseActionKey(){return JSON.stringify([session.generation,session.room,battle?.id,battle?.revision,actorId()]);}
+function currentActionKey(){return JSON.stringify([baseActionKey(),selectedPosition,battle?.mapped?null:targetId,scene?.revision]);}
+async function refreshActionMenu(){
+  if(!playerTurn()||!session.ready||busy||retry)return;
+  const key=currentActionKey();if(actionMenuKey===key||actionPendingKey===key||actionFailedKey===key)return;
+  actionPendingKey=key;actionMenuError='';
+  const params=new URLSearchParams({revision:battle.revision});
+  if(battle.mapped&&selectedPosition){params.set('x',selectedPosition[0]);params.set('y',selectedPosition[1]);}
+  if(!battle.mapped&&targetId)params.set('target_id',targetId);
+  const room=session.room;
+  try{const menu=await session.request(`/api/rooms/${room}/combat/actions?${params}`);
+    if(key!==currentActionKey()||busy||retry)return;
+    actionMenu=menu;actionMenuKey=key;actionMenuBase=baseActionKey();actionFailedKey='';renderControls();
+  }catch(e){if(key===currentActionKey()){actionFailedKey=key;actionMenuError=e.status===409?'Бой изменился, обновляем действия…':'Не удалось проверить доступность действий.';renderControls();}}
+  finally{if(actionPendingKey===key)actionPendingKey='';}
+}
+function renderActionButtons(root,items,enabled){
+  const fingerprint=JSON.stringify([items,enabled]);if(root.dataset.menu===fingerprint)return;root.dataset.menu=fingerprint;
+  root.replaceChildren(...items.map(item=>{
+    const button=node('button',item.command.action==='end_turn'?'end-turn':'',item.label);button.type='button';button.dataset.command=item.command.action;button.disabled=!enabled;
+    if(item.cost)button.append(node('small','',`◆ ${item.cost}`+(item.distance_feet!==undefined?` · ${item.distance_feet} футов`:'')));
+    button.addEventListener('click',()=>{if(actionMenuKey!==currentActionKey())return;const {action,...parameters}=item.command;send(action,parameters);});return button;
+  }));
+}
+function renderActionMenu(){
+  const valid=playerTurn()&&actionMenuKey===currentActionKey(),menu=valid?actionMenu:null;
+  const general=playerTurn()&&actionMenuBase===baseActionKey()?actionMenu.general:[];
+  renderActionButtons(q('#general-actions'),general,canAct());
+  renderActionButtons(q('#cell-actions'),menu?.selected||[],canAct());
+  q('#cell-actions-title').textContent=battle?.mapped?'Выбранная клетка':'Выбранная цель';
+  const selected=battle?.mapped?!!selectedPosition:!!targetId;
+  q('#clear-selection').hidden=!selected;q('#clear-selection').disabled=busy||!!retry;
+  q('#cell-actions-note').textContent=!selected?(battle?.mapped?'Выберите клетку на карте.':'Выберите цель выше.'):actionMenuError||(!menu?'Проверяем доступные действия…':menu.selection_label+(menu.selected.length?'':' · Доступных действий здесь нет.'));
+  const effects=[['reject_intent','Отклонить'],...[...general,...(menu?.selected||[])].map(item=>[item.command.action,item.label])];
+  options(q('#resolve-effect'),effects.filter(([id],index)=>effects.findIndex(([other])=>other===id)===index),q('#resolve-effect').value);
+  refreshActionMenu();
 }
 function renderControls(){
   renderPreparation();const f=active();const allowed=canAct();
   q('#hero-actions').disabled=!allowed;
-  q('#hero-actions').hidden=enemyTurn();q('#npc-actions').hidden=!enemyTurn();
-  const targets=(battle?.fighters||[]).map((f,i)=>[f,i]).filter(([f,i])=>living(f)&&active()&&side(f,i)!==side(active(),battle.turn));
-  targetId=options(q('#battle-target'),targets.map(([f])=>[f.entity_id||'',f.name]),targetId);
-  objectId=options(q('#battle-object'),(scene?.entities||[]).filter(e=>e.kind==='object').map(e=>[e.id,e.name]),objectId);
-  document.querySelectorAll('#hero-actions [data-command]').forEach(button=>button.disabled=!allowed||(button.dataset.command!=='end_turn'&&(!battle?.actions||(button.dataset.command==='move'&&!selectedPosition)||(button.dataset.command==='strike'&&!targetId)||(['take_cover','tip_over'].includes(button.dataset.command)&&!objectId))));
-  q('#intent-text').disabled=!allowed;
+  q('#hero-actions').hidden=!playerTurn();q('#npc-actions').hidden=!enemyTurn();
+  if(battle?.mapped){
+    const here=(battle.fighters||[]).map((f,i)=>({...f,index:i})).filter(f=>living(f)&&f.position?.[0]===selectedPosition?.[0]&&f.position?.[1]===selectedPosition?.[1]);
+    targetId=here.find(f=>active()&&side(f,f.index)!==side(active(),battle.turn))?.entity_id||'';
+    objectId=(scene?.entities||[]).find(e=>e.kind==='object'&&e.position?.[0]===selectedPosition?.[0]&&e.position?.[1]===selectedPosition?.[1])?.id||'';
+  }else{
+    const targets=(battle?.fighters||[]).map((f,i)=>[f,i]).filter(([f,i])=>living(f)&&active()&&side(f,i)!==side(active(),battle.turn));
+    targetId=options(q('#battle-target'),[['','Выберите цель'],...targets.map(([f])=>[f.entity_id||'',f.name])],targetId);
+  }
+  q('#fallback-target').hidden=!!battle?.mapped||!playerTurn();
+  renderActionMenu();
+  q('#intent-text').disabled=!allowed;q('#intent-thread').disabled=!allowed;
   q('#battle-intent button').disabled=!allowed||!!draftActor&&draftActor!==actorId();
-  q('#resolve-action').disabled=!allowed||!q('#resolve-intent').value;
+  q('#resolve-action').disabled=!allowed||!q('#resolve-intent').value||!q('#resolve-effect').value;
   q('#resolve-intent').disabled=!allowed;q('#resolve-effect').disabled=!allowed;
   const turnNpc=enemyTurn()&&!busy&&!retry&&session.ready;
   q('#ai-step').disabled=!turnNpc||(battle.actions>0&&(!ai?.configured||ai.requests_today>=ai.daily_request_limit));
@@ -179,35 +256,47 @@ async function refresh(){
     const previous=battle?.id;battle=b;scene=s;roster=r;ai=a;groups=g.groups;presets=templates.presets;
     if(!previous&&b.status==='active'){q('#battle-preparation').open=false;chosenHeroes=new Set(b.fighters.filter((f,i)=>side(f,i)==='players').map(f=>f.character_id));}
     if(previous&&previous!==b.id){selectedPosition=null;mapKey=queueKey=journalKey=intentsKey='';}
-    render();session.connection(true);q('#notice').hidden=true;
+    actionFailedKey='';render();session.connection(true);q('#notice').hidden=true;
   }catch(e){if(epoch===session.generation){session.connection(false);q('#notice').textContent=e.message;q('#notice').hidden=false;if(e.status===401)q('#access-gate').hidden=false;}}
   finally{if(refreshEpoch===epoch)refreshing=false;}
 }
 async function submitOperation(operation){
-  if(busy||!session.ready)return;busy=true;retry=operation;showError('');renderControls();mapKey='';renderMap();
+  if(busy||!session.ready)return;let nextIntent=null;busy=true;retry=operation;showError('');renderIntents();renderControls();mapKey='';renderMap();
   try{const result=await session.request(operation.path,{method:'POST',body:operation.body,headers:{'Idempotency-Key':operation.id},timeoutMs:operation.ai?90000:12000});
     if(operation.epoch!==session.generation||operation.room!==session.room)return;
     retry=null;
     if(operation.clearIntent){q('#intent-text').value='';draftActor=null;}
     if(result.combat)battle=result.combat;else if(result.fighters)battle=result;
     if(operation.start)q('#battle-preparation').open=false;
+    if(operation.clarifiedId)nextIntent=battle?.intents?.find(i=>i.id===operation.clarifiedId&&i.status==='pending'&&!i.analysis);
+    if(operation.intentIds){nextIntent=battle?.intents?.find(i=>!operation.intentIds.includes(i.id)&&i.status==='pending'&&!i.analysis);if(nextIntent)selectedThread=nextIntent.id;}
   }catch(e){if(operation.epoch===session.generation){showError(e.message);if(e.status&&e.status<500&&!(operation.ai&&e.status===409))retry=null;}}
   finally{busy=false;if(operation.epoch===session.generation){render();await refresh();}}
+  if(nextIntent&&operation.epoch===session.generation&&battle?.intents?.some(i=>i.id===nextIntent.id&&i.status==='pending'&&!i.analysis))await analyzeIntent(nextIntent,false);
 }
 function send(action,extra={},clearIntent=false){
   if(busy||retry||!session.ready||!battle)return;
+  const reviewActions=['strike','move','shield','take_cover','tip_over','demoralize','end_turn'];
+  if(playerTurn()&&reviewActions.includes(action)){
+    const requested={action,...extra},name=actionNames[action]||action;
+    const target=battle.fighters.find(f=>f.entity_id===extra.target_id);
+    extra={text:name+(target?' · '+target.name:'')+(extra.position?' ['+extra.position.join(',')+']':''),review:true,requested_action:requested,
+      ...(extra.target_id?{target_id:extra.target_id}:{}),...(extra.position?{position:extra.position}:selectedPosition?{position:selectedPosition}:{})};
+    action='intent';
+  }
   const body={action,revision:battle.revision,...(action==='start'?{}:{actor_id:actorId()}),...extra};
-  submitOperation({path:`/api/rooms/${session.room}/combat`,body:JSON.stringify(body),id:createId(),epoch:session.generation,room:session.room,clearIntent,start:action==='start'});
+  return submitOperation({path:`/api/rooms/${session.room}/combat`,body:JSON.stringify(body),id:createId(),epoch:session.generation,room:session.room,clearIntent,start:action==='start',...(action==='clarify_intent'?{clarifiedId:extra.intent_id}:{}),...(action==='intent'?{intentIds:(battle.intents||[]).map(i=>i.id)}:{})});
 }
-function parameters(action){return action==='move'?{position:selectedPosition}:action==='strike'?{target_id:targetId}:['take_cover','tip_over'].includes(action)?{target_id:objectId}:{};}
+function parameters(action){return action==='move'?{position:selectedPosition}:['strike','demoralize'].includes(action)?{target_id:targetId}:['take_cover','tip_over'].includes(action)?{target_id:objectId}:{};}
 q('#battle-preset').addEventListener('change',()=>{selectedPreset=q('#battle-preset').value;renderControls();});
 q('#start-battle').addEventListener('click',()=>send('start',{character_ids:[...chosenHeroes],group_id:q('#enemy-group').value,...(selectedPreset?{preset_id:selectedPreset}:{})}));
-q('#battle-target').addEventListener('change',()=>{targetId=q('#battle-target').value;renderMap();});q('#battle-object').addEventListener('change',()=>{objectId=q('#battle-object').value;});
+q('#battle-target').addEventListener('change',()=>{targetId=q('#battle-target').value;renderControls();});
+q('#clear-selection').addEventListener('click',()=>{selectedPosition=null;targetId='';objectId='';q('#map-selection').textContent='Клетка не выбрана.';renderMap();renderControls();});
 document.querySelectorAll('[data-command]').forEach(button=>button.addEventListener('click',()=>send(button.dataset.command,parameters(button.dataset.command))));
 const draftLabel=node('p','input-help');draftLabel.id='draft-owner';q('#intent-text').after(draftLabel);
 q('#intent-text').addEventListener('input',()=>{draftActor=q('#intent-text').value?(draftActor||actorId()):null;renderControls();});
 q('#battle-intent').addEventListener('submit',e=>{e.preventDefault();if(!canAct()||draftActor&&draftActor!==actorId())return;const text=q('#intent-text').value;if(!text.trim())return;
-  const objectCommand=/^(укры|занять укрытие|опрокин)/i.test(text.trim());send('intent',{text,target_id:objectCommand?objectId:targetId},true);
+  const objectCommand=/^(укры|занять укрытие|опрокин)/i.test(text.trim());const thread=q('#intent-thread').value;send(thread?'clarify_intent':'intent',{text,...(thread?{intent_id:thread}:{review:true}),...(objectId||targetId?{target_id:objectCommand?objectId:targetId}:{}),...(selectedPosition?{position:selectedPosition}:{})},true);
 });
 q('#resolve-action').addEventListener('click',()=>{const effect=q('#resolve-effect').value;send('resolve_intent',{intent_id:q('#resolve-intent').value,effect,...parameters(effect)});});
 q('#ai-step').addEventListener('click',()=>{
@@ -217,4 +306,5 @@ q('#ai-step').addEventListener('click',()=>{
 q('#retry-action').addEventListener('click',()=>{if(retry)submitOperation(retry);});
 q('#zoom-in').addEventListener('click',()=>{cellSize=Math.min(68,cellSize+6);renderMap();});q('#zoom-out').addEventListener('click',()=>{cellSize=Math.max(26,cellSize-6);renderMap();});
 q('#resolve-intent').addEventListener('change',renderControls);
+q('#intent-thread').addEventListener('change',()=>{selectedThread=q('#intent-thread').value;q('#intent-text').placeholder=q('#intent-thread').value?'Уточните замысел или задайте вопрос ведущему…':'Опишите новое действие…';});
 setInterval(refresh,1500);session.connect();

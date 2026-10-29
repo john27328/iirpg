@@ -22,7 +22,9 @@
     "attack": 6,
     "damage_die": 6,
     "damage_bonus": 2,
-    "perception": 4
+    "perception": 4,
+    "will": 4,
+    "intimidation": 3
   },
   "note": "Учебная симуляция: экспертное владение мечом. ОЗ листов не расходуются. Группы и дальности восприятия — авторские параметры прототипа, не расчёт сложности PF2e. Реакции, скрытность и диагонали пока не моделируются.",
   "coordination": {
@@ -35,7 +37,9 @@
       "name": "Один спарринг-партнёр",
       "members": [
         {
-          "role": "leader"
+          "role": "leader",
+          "will": 4,
+          "intimidation": 3
         }
       ]
     },
@@ -50,7 +54,9 @@
           "attack": 4,
           "damage_die": 4,
           "damage_bonus": 1,
-          "perception": 2
+          "perception": 2,
+          "will": 4,
+          "intimidation": 3
         },
         {
           "name": "Прикрывающий",
@@ -60,7 +66,9 @@
           "attack": 3,
           "damage_die": 4,
           "damage_bonus": 0,
-          "perception": 1
+          "perception": 1,
+          "will": 2,
+          "intimidation": 1
         }
       ]
     },
@@ -75,7 +83,9 @@
           "attack": 3,
           "damage_die": 4,
           "damage_bonus": 0,
-          "perception": 2
+          "perception": 2,
+          "will": 4,
+          "intimidation": 3
         },
         {
           "name": "Передний",
@@ -85,7 +95,9 @@
           "attack": 2,
           "damage_die": 4,
           "damage_bonus": 0,
-          "perception": 1
+          "perception": 1,
+          "will": 2,
+          "intimidation": 1
         },
         {
           "name": "Резерв",
@@ -95,7 +107,9 @@
           "attack": 2,
           "damage_die": 4,
           "damage_bonus": 0,
-          "perception": 1
+          "perception": 1,
+          "will": 2,
+          "intimidation": 1
         }
       ]
     }

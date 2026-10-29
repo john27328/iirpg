@@ -1,5 +1,6 @@
 """NPC-local observations, executable choices and their immediate consequences."""
 from copy import deepcopy
+from .combat_conditions import armor_class, status_penalty
 
 from .combat_map import approach, distance, move_fighter, route
 from .combat_tactics import (active, can_see, fighter_id, health, may_surrender,
@@ -38,20 +39,20 @@ def npc_context(state: dict, scene: dict, profile: dict) -> tuple[dict, dict[str
     consequences = {'end_turn': {'cost': 'remaining_actions', 'effect': 'Передать ход следующему активному участнику.'}}
     moves = {}
     penalty = state['rules']['map'][min(state['attacks'], 2)]
-    own_ac = actor['ac'] + max(state['rules']['shield_bonus'] if actor['shield'] else 0,
-                              (actor.get('cover') or {}).get('bonus', 0))
+    base_ac = actor['ac'] - status_penalty(actor)
+    own_ac = armor_class(state, actor)
     if state['actions'] > 0:
         for contact in foes:
             if contact['visible_now'] and (not state.get('mapped') or distance(actor['position'], contact['position']) == 1):
                 key = 'strike' if 'strike' not in commands else 'strike_' + str(by_id[contact['id']])
                 commands[key] = {'action': 'strike', 'target_id': contact['id']}
-                consequences[key] = {'cost': 1, 'target': contact['id'], 'attack_modifier': actor['attack'] + penalty,
+                consequences[key] = {'cost': 1, 'target': contact['id'], 'attack_modifier': actor['attack'] + penalty - status_penalty(actor),
                                      'repeat_penalty': penalty, 'loses_cover': bool(actor.get('cover')),
                                      'target_defence': 'unknown', 'target_condition': contact['condition']}
         if not actor['shield']:
             commands['shield'] = {'action': 'shield'}
-            consequences['shield'] = {'cost': 1, 'effective_ac_after': actor['ac'] + max(state['rules']['shield_bonus'], (actor.get('cover') or {}).get('bonus', 0)),
-                                      'ac_gain': max(0, actor['ac'] + state['rules']['shield_bonus'] - own_ac),
+            consequences['shield'] = {'cost': 1, 'effective_ac_after': base_ac + max(state['rules']['shield_bonus'], (actor.get('cover') or {}).get('bonus', 0)),
+                                      'ac_gain': max(0, base_ac + state['rules']['shield_bonus'] - own_ac),
                                       'expires': 'start_of_own_next_turn'}
         if may_surrender(state, index):
             commands['surrender'] = {'action': 'surrender'}
@@ -74,8 +75,8 @@ def npc_context(state: dict, scene: dict, profile: dict) -> tuple[dict, dict[str
                         key = 'cover_' + entity['id']
                         commands[key] = {'action': 'take_cover', 'target_id': entity['id']}
                         bonus = scene['rules']['cover_bonus']
-                        consequences[key] = {'cost': 1, 'ac_gain': max(0, actor['ac'] + bonus - own_ac),
-                                             'effective_ac_after': actor['ac'] + max(bonus, state['rules']['shield_bonus'] if actor['shield'] else 0),
+                        consequences[key] = {'cost': 1, 'ac_gain': max(0, base_ac + bonus - own_ac),
+                                             'effective_ac_after': base_ac + max(bonus, state['rules']['shield_bonus'] if actor['shield'] else 0),
                                              'ends_on': ['strike', 'move']}
                 cx, cy = entity['position']
                 cover_positions.extend([[cx-1, cy], [cx+1, cy], [cx, cy-1], [cx, cy+1]])
@@ -140,7 +141,7 @@ def npc_context(state: dict, scene: dict, profile: dict) -> tuple[dict, dict[str
         intent = 'support_visible_leader_and_use_a_free_approach'
     if intent == 'engage' and not any(c['visible_now'] for c in foes):
         intent = 'search_last_seen_or_regroup' if threats else 'observe_and_protect_self'
-    own_fields = ('name', 'hp', 'max_hp', 'ac', 'attack', 'damage_die', 'damage_bonus', 'position', 'speed', 'shield', 'cover', 'role')
+    own_fields = ('name', 'hp', 'max_hp', 'ac', 'attack', 'damage_die', 'damage_bonus', 'position', 'speed', 'shield', 'cover', 'role', 'frightened')
     own_events = [e for e in memory['events'] if e['actor'] == actor_id and e['action'] == 'strike'
                   and e['turn'] == state.get('turns_elapsed', 0)]
     own_actions = [e for e in memory['events'] if e['actor'] == actor_id and e['turn'] == state.get('turns_elapsed', 0)]
@@ -180,6 +181,7 @@ def npc_context(state: dict, scene: dict, profile: dict) -> tuple[dict, dict[str
         'own_attacks_this_turn': own_events, 'recent_events': deepcopy(memory['events'][-6:]),
         'rules': 'Три действия за ход. Удар, щит, укрытие и движение стоят одно действие. '
                  'Штраф повторных атак: 0/-5/-10. Щит и укрытие не складываются. '
+                 'Испуган X снижает проверки и КС на X, включая атаки и КБ; урон не снижает. Уменьшается на 1 в конце своего хода, не заставляет бежать. '
                  'Удар и движение снимают укрытие. Реакции и механический бонус окружения пока отсутствуют.',
         'decision_guidance': [
             'Выбери действие для current_intent по текущим наблюдениям. Приказ — ориентир, его можно пересмотреть при опасности.',

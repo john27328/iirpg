@@ -6,3 +6,8 @@
 .battle-column{display:flex;flex-direction:column;gap:18px;min-width:0}.battle-column>*{min-width:0}.battle-workspace .map-coord{font-size:8px;line-height:10px}@media(max-width:760px){.battle-column{display:contents}.battle-heading>button{white-space:normal}}
 @media(max-width:760px){.battle-column>section,.battle-column>aside{width:100%;max-width:100%;min-width:0}.battlefield .section-heading>div:first-child{min-width:0}}
 .preset-picker{grid-column:1/-1}#preset-description{color:#b5c8a9!important;line-height:1.7}
+.action-section{margin:0 0 18px}.action-section h3{font-size:11px;font-weight:600;color:#b6c9a9;margin:0}.cell-actions-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}#clear-selection{font-size:9px;padding:4px 7px;background:transparent;border-color:#40513b}.action-section .action-grid{margin:9px 0 0}.action-section .action-grid:empty{display:none}.action-section .end-turn{grid-column:1/-1;margin-top:0;min-height:42px}.cell-actions-heading+p{margin:8px 0 0}
+
+.intent-card button{width:100%;margin-top:9px;white-space:normal}.intent-card .confirm-intent{background:#bcd79e;color:#203016}.intent-card .intent-check{font-weight:600;color:#dcebbd}.intent-card .analyze-intent{background:#242f23}.intent-card .input-help{font-size:10px}
+
+.intent-dialogue{max-height:260px;overflow:auto;border-left:2px solid #657452;padding-left:9px;margin:10px 0}.intent-dialogue p{font-size:11px}.intent-dialogue .dialogue-gm{color:#b9cfa8}.intent-card .clarify-intent{background:transparent}#intent-thread{width:100%;margin:7px 0 14px}

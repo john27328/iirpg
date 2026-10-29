@@ -15,6 +15,7 @@ from .combat import CombatStore
 from .scene import SceneStore
 from .storage import MessageConflict
 from .combat_tactics import team
+from .gm_context import GM_PROMPT, intent_options
 
 DEFAULT_AI_CONFIG = Path(__file__).with_name('rules') / 'ai.json'
 SYSTEM_PROMPT = (
@@ -142,19 +143,43 @@ class AIService:
             state, context, _ = self._prepare(c, room)
         return {'revision': state['revision'], 'context': context}
 
+    def _prepare_gm(self, c, room: str, command: dict) -> tuple[dict, dict, dict]:
+        self.store._require_room(c, room)
+        row = c.execute('SELECT body FROM encounters WHERE room_id=?', (room,)).fetchone()
+        state = json.loads(row[0]) if row else {}
+        if command['revision'] != state.get('revision'):
+            raise MessageConflict('Бой изменился. Обновите страницу.')
+        if state.get('status') != 'active' or team(state, state['turn']) != 'players':
+            raise ValueError('Разбирайте намерение в активный ход его автора.')
+        actor = state['fighters'][state['turn']]
+        intent = next((i for i in state.get('intents', []) if i['id'] == command.get('intent_id') and i['status'] == 'pending' and i['actor_id'] == actor.get('entity_id')), None)
+        if not intent:
+            raise ValueError('Намерение должно ожидать решения и принадлежать активному герою.')
+        roster = self.combat.roster._load(c, room)
+        self.combat.hydrate_skills(state, roster)
+        context, commands = intent_options(state, self.scene._load(c, room), roster, intent, command.get('target_id'))
+        if len(json.dumps(context, ensure_ascii=False).encode()) > self.config['context_max_bytes']:
+            raise ValueError('Намерение превышает бюджет контекста ведущего.')
+        return state, context, commands
+
+    def analyze_intent(self, room: str, command: dict, request_id: str) -> dict:
+        return self.step(room, command, request_id, role='gm')
+
     def _save(self, room: str, request_id: str, trace: dict) -> None:
         with self.store._connection() as c:
             c.execute('UPDATE ai_requests SET body=? WHERE room_id=? AND request_id=?',
                       (json.dumps(trace, ensure_ascii=False), room, request_id))
 
-    def step(self, room: str, command: dict, request_id: str) -> dict:
+    def step(self, room: str, command: dict, request_id: str, *, role: str = 'npc') -> dict:
         try:
             UUID(request_id)
         except (ValueError, TypeError, AttributeError):
             raise ValueError('Нужен UUID Idempotency-Key.') from None
-        if set(command) != {'revision'} or type(command['revision']) is not int:
+        expected = {'revision'} if role == 'npc' else {'revision', 'intent_id'}
+        optional = set() if role == 'npc' else {'target_id'}
+        if not expected <= set(command) or set(command) - expected - optional or type(command['revision']) is not int:
             raise ValueError('Передайте только целочисленную revision боя.')
-        encoded = json.dumps(command, sort_keys=True)
+        encoded = json.dumps(command if role == 'npc' else {'role': role, 'command': command}, sort_keys=True)
         now = self.now()
         with self.store._connection() as c:
             c.execute('BEGIN IMMEDIATE')
@@ -173,7 +198,7 @@ class AIService:
                         raise MessageConflict('Запрос ИИ уже отправлен. Проверьте результат в отладке; повторной отправки не будет.')
                     raise ValueError(trace.get('error', 'Запрос завершён без действия. Создайте новый запрос явно.'))
             else:
-                state, context, commands = self._prepare(c, room, command['revision'])
+                state, context, commands = self._prepare(c, room, command['revision']) if role == 'npc' else self._prepare_gm(c, room, command)
                 if not self.client.ready():
                     raise ValueError('Добавьте ключ OpenRouter в локальный файл ключа на сервере.')
                 today = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
@@ -185,9 +210,9 @@ class AIService:
                     raise MessageConflict('Другой запрос ИИ ещё выполняется. Дождитесь его завершения.')
                 payload = {
                     'model': self.config['model'], 'stream': False,
-                    'messages': [{'role': 'system', 'content': SYSTEM_PROMPT},
+                    'messages': [{'role': 'system', 'content': SYSTEM_PROMPT if role == 'npc' else GM_PROMPT},
                                  {'role': 'user', 'content': json.dumps(context, ensure_ascii=False)}],
-                    'temperature': 0.2, 'max_tokens': self.config['max_tokens'],
+                    'temperature': 0.2, 'max_tokens': self.config['max_tokens'] if role == 'npc' else max(512, self.config['max_tokens']),
                     'reasoning': {'enabled': self.config['reasoning']},
                     'provider': {'require_parameters': True, 'max_price': {'prompt': 0, 'completion': 0}},
                     'response_format': {'type': 'json_schema', 'json_schema': {
@@ -195,9 +220,14 @@ class AIService:
                             'type': 'object', 'properties': {'choice': {'type': 'string', 'enum': list(commands)}},
                             'required': ['choice'], 'additionalProperties': False}}},
                 }
+                if role == 'gm':
+                    schema = payload['response_format']['json_schema']['schema']
+                    schema['properties']['explanation'] = {'type': 'string', 'maxLength': 400}
+                    schema['required'].append('explanation')
                 trace = {'request_id': request_id, 'status': 'running', 'started': now,
+                         'role': role,
                          'encounter_id': state['id'], 'revision': state['revision'],
-                         'context': context, 'request': payload}
+                         'context': context, 'commands': commands, 'request': payload}
                 c.execute('INSERT INTO ai_requests VALUES(?,?,?,?,?)',
                           (room, request_id, encoded, now, json.dumps(trace, ensure_ascii=False)))
         if trace['status'] == 'running':
@@ -206,9 +236,14 @@ class AIService:
                 response = self.client.complete(trace['request'], self.config['timeout_seconds'])
                 trace['response'] = response
                 decision = json.loads(response['content'])
-                commands = trace['context']['available_actions']
-                if not isinstance(decision, dict) or set(decision) != {'choice'} or not isinstance(decision['choice'], str) or decision['choice'] not in commands:
+                commands = trace.get('commands', trace['context'].get('available_actions', {}))
+                keys = {'choice'} if role == 'npc' else {'choice', 'explanation'}
+                if not isinstance(decision, dict) or set(decision) != keys or not isinstance(decision['choice'], str) or decision['choice'] not in commands:
                     raise ValueError('ИИ выбрал недопустимое действие. Состояние боя не изменено.')
+                if role == 'gm':
+                    if not isinstance(decision['explanation'], str) or not decision['explanation'].strip() or len(decision['explanation']) > 400:
+                        raise ValueError('Ведущий не вернул короткое объяснение.')
+                    commands[decision['choice']]['summary'] = decision['explanation']
                 trace.update(status='chosen', choice=decision['choice'], command=commands[decision['choice']])
             except (ValueError, TypeError, KeyError) as error:
                 trace.update(status='failed', error='ИИ не вернул допустимое действие. Проверьте ответ в отладке; автоповтор отключён.')

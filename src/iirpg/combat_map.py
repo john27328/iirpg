@@ -29,7 +29,7 @@ def route(state: dict, start: list[int], goal: list[int], occupied: list[list[in
     return []
 
 
-def move_fighter(state: dict, scene: dict, position: list[int]) -> str:
+def movement_cost(state: dict, scene: dict, position: list[int]) -> int:
     if state['actions']<=0:raise ValueError('Действия закончились.')
     actor=state['fighters'][state['turn']]
     occupied=[f['position'] for i,f in enumerate(state['fighters']) if i!=state['turn'] and f['hp']>0 and not f.get('surrendered')]
@@ -37,7 +37,12 @@ def move_fighter(state: dict, scene: dict, position: list[int]) -> str:
     temporary=deepcopy(scene)
     temporary['entities'].extend({'kind':'object','position':p,'blocks_movement':True} for p in occupied)
     moved={'position':list(actor['position'])}
-    feet=move_on_map(temporary,moved,position,actor['speed'])
+    return move_on_map(temporary,moved,position,actor['speed'])
+
+
+def move_fighter(state: dict, scene: dict, position: list[int]) -> str:
+    feet=movement_cost(state,scene,position)
+    actor=state['fighters'][state['turn']]
     actor.update(position=list(position),cover=None)
     state['actions']-=1
     return f"{actor['name']} перемещается в {position}: {feet} футов; осталось действий {state['actions']}."
