@@ -258,3 +258,64 @@ class GMIntentTests(unittest.TestCase):
         with self.store._connection() as c:c.execute('UPDATE encounters SET body=? WHERE room_id=?', (json.dumps(offered), self.room))
         result = self.act(offered, 'accept_intent', intent_id=offered['intents'][-1]['id'])
         self.assertEqual(result['actions'], offered['actions']-1)
+
+    def button(self, state, action='shield', **parameters):
+        state = self.act(state, 'intent', text='Кнопка '+action, review=True,
+                         requested_action={'action':action, **parameters}, **parameters)
+        self.client = GMClient();self.ai = AIService(self.combat, self.scene, load_config(), self.client)
+        command = {'revision':state['revision'], 'intent_id':state['intents'][-1]['id'], 'auto_execute':True}
+        with self.store._connection() as c:
+            _, context, choices = self.ai._prepare_gm(c, self.room, command)
+        self.client.choice = next(k for k,v in choices.items() if v['action']=='execute_intent')
+        return state, command
+
+    def test_button_executes_after_ai_without_confirmation_and_replays_once(self):
+        state, command = self.button(self.start());rolls = list(self.rolls);key = str(uuid4())
+        response = self.ai.analyze_intent(self.room, command, key);result = response['combat']
+        self.assertTrue(result['fighters'][0]['shield']);self.assertEqual(result['actions'], 2)
+        self.assertEqual(result['intents'][-1]['status'], 'resolved')
+        self.assertEqual(result['journal'][-1]['action'], 'shield')
+        self.assertNotIn('подтверждения', result['log'][-2])
+        context = response['trace']['context']
+        self.assertEqual(context['execution_mode'], 'execute_requested_button')
+        self.assertEqual({v['effect'] for v in context['options'].values()}, {'shield','manual','need_target'})
+        self.assertEqual(self.ai.analyze_intent(self.room, command, key), response)
+        self.assertEqual(len(self.client.calls), 1);self.assertEqual(self.rolls, rolls)
+        trace = response['trace'];trace.update(status='chosen');trace.pop('result');self.ai._save(self.room, key, trace)
+        self.assertEqual(self.ai.analyze_intent(self.room, command, key)['combat'], result)
+        self.assertEqual(self.combat.read(self.room), result)
+        self.assertEqual(len(self.client.calls), 1)
+
+    def test_auto_execute_requires_saved_button_and_cannot_replace_its_parameters(self):
+        state = self.pending()
+        with self.assertRaisesRegex(ValueError, 'кнопкой'):
+            self.ai.analyze_intent(self.room, {'revision':state['revision'],'intent_id':state['intents'][-1]['id'],'auto_execute':True}, str(uuid4()))
+        self.assertEqual(len(self.client.calls), 0)
+        state, command = self.button(state, 'demoralize', target_id=state['fighters'][2]['entity_id'])
+        with self.assertRaisesRegex(ValueError, 'теми же параметрами'):
+            self.act(state, 'execute_intent', intent_id=command['intent_id'], effect='demoralize', target_id=state['fighters'][3]['entity_id'], summary='Подмена цели')
+        self.assertEqual(self.combat.read(self.room), state)
+        with self.assertRaisesRegex(ValueError, 'логическим'):
+            self.ai.analyze_intent(self.room, {**command,'auto_execute':'true'}, str(uuid4()))
+        self.client.choice = 'manual'
+        result = self.ai.analyze_intent(self.room, command, str(uuid4()))['combat']
+        self.assertEqual(result['actions'], state['actions'])
+        self.assertEqual(result['intents'][-1]['status'], 'pending')
+
+    def test_button_roll_is_atomic_and_stale_ai_cannot_execute(self):
+        state = self.pending();target = state['fighters'][2]['entity_id']
+        state, command = self.button(state, 'demoralize', target_id=target)
+        rolls = list(self.rolls);key = str(uuid4())
+        result = self.ai.analyze_intent(self.room, command, key)['combat']
+        self.assertEqual(self.rolls, rolls+[20])
+        self.assertEqual(result['actions'], state['actions']-1)
+        self.assertEqual(result['intents'][-1]['status'], 'resolved')
+        self.ai.analyze_intent(self.room, command, key)
+        self.assertEqual(self.rolls, rolls+[20])
+        state, command = self.button(result, 'shield');complete = self.client.complete
+        def stale(payload, timeout):
+            self.act(state, 'end_turn')
+            return complete(payload, timeout)
+        self.client.complete = stale
+        with self.assertRaises(MessageConflict):self.ai.analyze_intent(self.room, command, str(uuid4()))
+        self.assertFalse(self.combat.read(self.room)['fighters'][0]['shield'])

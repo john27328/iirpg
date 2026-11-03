@@ -17,7 +17,7 @@ from .scene_rules import perform_action, initial_scene
 from .combat_actions import available_actions, strike_target, cover_target
 from .combat_conditions import armor_class, status_penalty
 from .demoralize import demoralize
-from .gm_context import describe_proposal
+from .gm_context import describe_proposal, matches_requested_action
 from .intent_dialogue import append_message
 from .combat_tactics import (active, communicate, may_surrender,
                              observe, remember_event, target_index, team)
@@ -258,7 +258,7 @@ class CombatStore:
                     raise ValueError('Сейчас ход другого участника. Обновите состояние боя.')
                 if state.get('mapped') and (not scene or 'map' not in scene):
                     raise ValueError('Карта боя недоступна.')
-                if action in ('intent', 'clarify_intent', 'resolve_intent', 'offer_intent', 'accept_intent') and team(state, turn) != 'players':
+                if action in ('intent', 'clarify_intent', 'resolve_intent', 'offer_intent', 'accept_intent', 'execute_intent') and team(state, turn) != 'players':
                     raise ValueError('Текстовое действие сейчас может заявить только активный герой.')
                 if action == 'intent':
                     source_text = command.get('text')
@@ -268,11 +268,20 @@ class CombatStore:
                     if parsed and not command.get('review'):
                         command = parsed
                         action = parsed['action']
-                elif action in ('clarify_intent', 'resolve_intent', 'offer_intent', 'accept_intent'):
+                elif action in ('clarify_intent', 'resolve_intent', 'offer_intent', 'accept_intent', 'execute_intent'):
                     resolved_intent = next((i for i in state.get('intents', []) if i['id'] == command.get('intent_id') and i['status'] == 'pending'), None)
                     if not resolved_intent or resolved_intent['actor_id'] != actor_id:
                         raise ValueError('Намерение должно ожидать решения и принадлежать активному герою.')
-                    if action == 'accept_intent':
+                    if action == 'execute_intent':
+                        if not matches_requested_action(resolved_intent.get('requested_action', {}), command):
+                            raise ValueError('ИИ может выполнить только выбранную кнопкой команду с теми же параметрами.')
+                        if not isinstance(command.get('summary'), str) or len(command['summary']) > 400:
+                            raise ValueError('Нужно короткое объяснение ИИ.')
+                        proposal = describe_proposal(state, scene, roster, command)
+                        append_message(resolved_intent, 'assistant', proposal['summary'], proposal)
+                        resolved_intent['analysis'] = proposal
+                        action = proposal['effect']
+                    elif action == 'accept_intent':
                         proposal = resolved_intent.get('analysis')
                         if not proposal or proposal['effect'] in ('manual','need_target'):
                             raise ValueError('Сначала получите предложение реализуемого действия.')
@@ -290,6 +299,8 @@ class CombatStore:
                         raise ValueError('Выберите реализуемое действие или отклоните намерение.')
                     source_text = resolved_intent['text']
                 snapshot_before = snapshot()
+                if input_action == 'execute_intent':
+                    record('offer_intent', 'ИИ-ведущий: ' + proposal['summary'] + ' Выполняю выбранное действие.', before)
                 if action == 'intent':
                     intents = state.setdefault('intents', [])
                     if len(intents) >= 200:

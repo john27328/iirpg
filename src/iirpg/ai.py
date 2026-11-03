@@ -15,7 +15,7 @@ from .combat import CombatStore
 from .scene import SceneStore
 from .storage import MessageConflict
 from .combat_tactics import team
-from .gm_context import GM_PROMPT, intent_options
+from .gm_context import GM_PROMPT, intent_options, matches_requested_action
 
 DEFAULT_AI_CONFIG = Path(__file__).with_name('rules') / 'ai.json'
 SYSTEM_PROMPT = (
@@ -158,6 +158,15 @@ class AIService:
         roster = self.combat.roster._load(c, room)
         self.combat.hydrate_skills(state, roster)
         context, commands = intent_options(state, self.scene._load(c, room), roster, intent, command.get('target_id'))
+        if command.get('auto_execute'):
+            requested = intent.get('requested_action')
+            if not requested:
+                raise ValueError('Без подтверждения выполняется только выбранная кнопкой команда.')
+            commands = {key: {**choice, 'action':'execute_intent'} if matches_requested_action(requested, choice) else choice
+                        for key, choice in commands.items()
+                        if matches_requested_action(requested, choice) or choice['effect'] in ('manual','need_target')}
+            context['options'] = {key:context['options'][key] for key in commands}
+            context['execution_mode'] = 'execute_requested_button'
         if len(json.dumps(context, ensure_ascii=False).encode()) > self.config['context_max_bytes']:
             raise ValueError('Намерение превышает бюджет контекста ведущего.')
         return state, context, commands
@@ -176,9 +185,11 @@ class AIService:
         except (ValueError, TypeError, AttributeError):
             raise ValueError('Нужен UUID Idempotency-Key.') from None
         expected = {'revision'} if role == 'npc' else {'revision', 'intent_id'}
-        optional = set() if role == 'npc' else {'target_id'}
+        optional = set() if role == 'npc' else {'target_id', 'auto_execute'}
         if not expected <= set(command) or set(command) - expected - optional or type(command['revision']) is not int:
             raise ValueError('Передайте только целочисленную revision боя.')
+        if 'auto_execute' in command and type(command['auto_execute']) is not bool:
+            raise ValueError('auto_execute должен быть логическим значением.')
         encoded = json.dumps(command if role == 'npc' else {'role': role, 'command': command}, sort_keys=True)
         now = self.now()
         with self.store._connection() as c:

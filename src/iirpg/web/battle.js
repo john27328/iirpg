@@ -6,7 +6,7 @@ let presets=[],selectedPreset=null;
 let refreshEpoch=null;
 let lastRoom=null,selectedPosition=null,targetId='',objectId='',cellSize=44,draftActor=null;
 let chosenHeroes=new Set(),partyKey='',mapKey='',queueKey='',journalKey='',intentsKey='';
-let lastActiveId=null,selectedThread=null;
+let lastActiveId=null,selectedThread=null,npcTimer=null,npcSteps=0;
 let actionMenu=null,actionMenuKey='',actionMenuBase='',actionPendingKey='',actionFailedKey='',actionMenuError='';
 const side=(f,i)=>f.team||(i===0?'players':'enemies');
 const living=f=>f.hp>0&&!f.surrendered;
@@ -16,7 +16,7 @@ const playerTurn=()=>battle?.status==='active'&&side(active(),battle.turn)==='pl
 const enemyTurn=()=>battle?.status==='active'&&!playerTurn();
 const canAct=()=>session.ready&&!busy&&!retry&&playerTurn();
 const session=createRoomSession(async()=>{
-  if(lastRoom!==session.room){lastRoom=session.room;selectedThread=null;retry=null;chosenHeroes=new Set();battle=null;scene=null;roster=null;selectedPosition=null;selectedPreset=null;targetId='';objectId='';draftActor=null;q('#intent-text').value='';partyKey=mapKey=queueKey=journalKey=intentsKey='';q('#action-error').hidden=true;q('#battle-preparation').open=true;}
+  if(lastRoom!==session.room){lastRoom=session.room;selectedThread=null;q('#auto-npc').checked=false;clearTimeout(npcTimer);npcTimer=null;npcSteps=0;retry=null;chosenHeroes=new Set();battle=null;scene=null;roster=null;selectedPosition=null;selectedPreset=null;targetId='';objectId='';draftActor=null;q('#intent-text').value='';partyKey=mapKey=queueKey=journalKey=intentsKey='';q('#action-error').hidden=true;q('#battle-preparation').open=true;}
   await refresh();
 });
 const actionNames={start:'Начало боя',strike:'Удар',move:'Перемещение',shield:'Щит',take_cover:'Укрытие',tip_over:'Объект',end_turn:'Конец хода',communicate:'Переговоры',surrender:'Сдача',intent:'Намерение',clarify_intent:'Уточнение',offer_intent:'Предложение ИИ',demoralize:'Деморализация',reject_intent:'Решение ведущего',wait:'Ожидание'};
@@ -51,6 +51,8 @@ function renderPreparation(){
   const locked=busy||!!retry||battle?.status==='active';
   q('#party-options').closest('fieldset').disabled=locked;
   q('#enemy-group').disabled=locked||!!preset;q('#battle-preset').disabled=locked;
+  q('#create-training-hero').disabled=locked||!session.ready;
+  q('#start-battle').textContent=battle?.status==='finished'?'Сыграть ещё раз':'Начать бой';
   q('#start-battle').disabled=locked||!session.ready||!chosenHeroes.size||chosenHeroes.size>4;
 }
 function renderQueue(){
@@ -142,9 +144,9 @@ function renderJournal(){
   log.scrollTop=following?log.scrollHeight:scroll;
 }
 function aiReady(){return ai?.configured&&ai.requests_today<ai.daily_request_limit;}
-function analyzeIntent(intent,useSelection=true){
+function analyzeIntent(intent,useSelection=true,autoExecute=false){
   if(!canAct()||intent.actor_id!==actorId()||!aiReady())return;
-  return submitOperation({path:`/api/rooms/${session.room}/ai/gm/intent`,body:JSON.stringify({revision:battle.revision,intent_id:intent.id,...(useSelection&&targetId?{target_id:targetId}:{})}),id:createId(),epoch:session.generation,room:session.room,ai:true});
+  return submitOperation({path:`/api/rooms/${session.room}/ai/gm/intent`,body:JSON.stringify({revision:battle.revision,intent_id:intent.id,...(autoExecute?{auto_execute:true}:{}),...(useSelection&&targetId?{target_id:targetId}:{})}),id:createId(),epoch:session.generation,room:session.room,ai:true});
 }
 function renderIntents(){
   const intents=battle?.intents||[],fingerprint=JSON.stringify([intents,canAct(),actorId(),aiReady(),targetId,busy]);
@@ -248,7 +250,7 @@ function renderControls(){
   q('#retry-action').hidden=!retry;q('#retry-action').disabled=busy;
   if(draftActor&&draftActor!==actorId()&&q('#intent-text').value){const name=battle?.fighters?.find(f=>f.entity_id===draftActor)?.name||'предыдущего героя';q('#draft-owner').textContent=`Черновик для ${name}. Дождитесь его хода или очистите поле.`;}else q('#draft-owner').textContent='';
 }
-function render(){renderActive();renderQueue();renderIntents();renderControls();renderMap();renderJournal();}
+function render(){renderActive();renderQueue();renderIntents();renderControls();renderMap();renderJournal();scheduleNpc();}
 async function refresh(){
   if(!session.ready||busy||(refreshing&&refreshEpoch===session.generation))return;const epoch=session.generation,room=session.room;refreshing=true;refreshEpoch=epoch;
   try{const [b,s,r,a,g,templates]=await Promise.all([session.request(`/api/rooms/${room}/combat`),session.request(`/api/rooms/${room}/scene`),session.request(`/api/rooms/${room}/roster`),session.request('/api/ai'),session.request('/api/combat/groups'),session.request('/api/combat/presets')]);
@@ -265,19 +267,23 @@ async function submitOperation(operation){
   try{const result=await session.request(operation.path,{method:'POST',body:operation.body,headers:{'Idempotency-Key':operation.id},timeoutMs:operation.ai?90000:12000});
     if(operation.epoch!==session.generation||operation.room!==session.room)return;
     retry=null;
+    if(operation.createdHero&&result.entity_id)chosenHeroes.add(result.entity_id);
     if(operation.clearIntent){q('#intent-text').value='';draftActor=null;}
     if(result.combat)battle=result.combat;else if(result.fighters)battle=result;
-    if(operation.start)q('#battle-preparation').open=false;
+    if(operation.start){q('#battle-preparation').open=false;q('#auto-npc').checked=true;npcSteps=0;}
+    if(battle?.status==='finished')q('#battle-preparation').open=true;
     if(operation.clarifiedId)nextIntent=battle?.intents?.find(i=>i.id===operation.clarifiedId&&i.status==='pending'&&!i.analysis);
     if(operation.intentIds){nextIntent=battle?.intents?.find(i=>!operation.intentIds.includes(i.id)&&i.status==='pending'&&!i.analysis);if(nextIntent)selectedThread=nextIntent.id;}
-  }catch(e){if(operation.epoch===session.generation){showError(e.message);if(e.status&&e.status<500&&!(operation.ai&&e.status===409))retry=null;}}
+  }catch(e){if(operation.epoch===session.generation){showError(e.message);q('#auto-npc').checked=false;clearTimeout(npcTimer);npcTimer=null;if(e.status&&e.status<500&&!(operation.ai&&e.status===409))retry=null;}}
   finally{busy=false;if(operation.epoch===session.generation){render();await refresh();}}
-  if(nextIntent&&operation.epoch===session.generation&&battle?.intents?.some(i=>i.id===nextIntent.id&&i.status==='pending'&&!i.analysis))await analyzeIntent(nextIntent,false);
+  if(nextIntent&&operation.epoch===session.generation&&battle?.intents?.some(i=>i.id===nextIntent.id&&i.status==='pending'&&!i.analysis))await analyzeIntent(nextIntent,false,!!operation.buttonAction);
 }
 function send(action,extra={},clearIntent=false){
   if(busy||retry||!session.ready||!battle)return;
+  let buttonAction=false;
   const reviewActions=['strike','move','shield','take_cover','tip_over','demoralize','end_turn'];
   if(playerTurn()&&reviewActions.includes(action)){
+    buttonAction=true;
     const requested={action,...extra},name=actionNames[action]||action;
     const target=battle.fighters.find(f=>f.entity_id===extra.target_id);
     extra={text:name+(target?' · '+target.name:'')+(extra.position?' ['+extra.position.join(',')+']':''),review:true,requested_action:requested,
@@ -285,9 +291,26 @@ function send(action,extra={},clearIntent=false){
     action='intent';
   }
   const body={action,revision:battle.revision,...(action==='start'?{}:{actor_id:actorId()}),...extra};
-  return submitOperation({path:`/api/rooms/${session.room}/combat`,body:JSON.stringify(body),id:createId(),epoch:session.generation,room:session.room,clearIntent,start:action==='start',...(action==='clarify_intent'?{clarifiedId:extra.intent_id}:{}),...(action==='intent'?{intentIds:(battle.intents||[]).map(i=>i.id)}:{})});
+  return submitOperation({path:`/api/rooms/${session.room}/combat`,body:JSON.stringify(body),id:createId(),epoch:session.generation,room:session.room,clearIntent,buttonAction,start:action==='start',...(action==='clarify_intent'?{clarifiedId:extra.intent_id}:{}),...(action==='intent'?{intentIds:(battle.intents||[]).map(i=>i.id)}:{})});
 }
 function parameters(action){return action==='move'?{position:selectedPosition}:['strike','demoralize'].includes(action)?{target_id:targetId}:['take_cover','tip_over'].includes(action)?{target_id:objectId}:{};}
+function scheduleNpc(){
+  clearTimeout(npcTimer);npcTimer=null;
+  if(playerTurn())npcSteps=0;
+  const enabled=q('#auto-npc').checked;
+  q('#auto-npc-status').textContent=battle?.status==='finished'?'Бой завершён. Можно выбрать другую заготовку и сыграть снова.':enabled?(enemyTurn()?'Противник обдумывает ход…':'ИИ ждёт вашего хода.'):'Автоматические ходы приостановлены.';
+  if(!enabled||!enemyTurn()||busy||retry||!session.ready||document.hidden)return;
+  if(!aiReady()&&battle.actions>0){q('#auto-npc').checked=false;q('#auto-npc-status').textContent='ИИ недоступен: проверьте ключ или лимит. Можно завершить ход обычной тактикой.';return;}
+  if(npcSteps>=20){q('#auto-npc').checked=false;q('#auto-npc-status').textContent='Пауза после 20 шагов ИИ. Проверьте журнал и включите автоматические ходы для продолжения.';return;}
+  const epoch=session.generation,revision=battle.revision;
+  npcTimer=setTimeout(()=>{npcTimer=null;if(epoch!==session.generation||revision!==battle?.revision||!q('#auto-npc').checked||!enemyTurn()||busy||retry)return;npcSteps++;q('#ai-step').click();},700);
+}
+q('#auto-npc').addEventListener('change',()=>{npcSteps=0;scheduleNpc();});
+document.addEventListener('visibilitychange',scheduleNpc);
+q('#create-training-hero').addEventListener('click',()=>{
+  if(busy||retry||!roster||battle?.status==='active')return;
+  submitOperation({path:`/api/rooms/${session.room}/roster`,body:JSON.stringify({action:'create_character',revision:roster.revision,data:{name:'Искатель '+(roster.characters.length+1),attributes:{strength:4,dexterity:2,constitution:2,wisdom:1,charisma:1},sheet:{values:{level:1,hp_max:20,hp_current:20,armor_rank:'trained',armor_item_bonus:2}}}}),id:createId(),epoch:session.generation,room:session.room,createdHero:true});
+});
 q('#battle-preset').addEventListener('change',()=>{selectedPreset=q('#battle-preset').value;renderControls();});
 q('#start-battle').addEventListener('click',()=>send('start',{character_ids:[...chosenHeroes],group_id:q('#enemy-group').value,...(selectedPreset?{preset_id:selectedPreset}:{})}));
 q('#battle-target').addEventListener('change',()=>{targetId=q('#battle-target').value;renderControls();});
