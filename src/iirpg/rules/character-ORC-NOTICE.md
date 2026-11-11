@@ -95,3 +95,7 @@ IIRPG contributors adapted the parameters, Russian labels, and bounded
 training implementation. NPC Will/Intimidation numbers are authored training
 profiles, not copied creature statistics. The combat round timer for temporary
 immunity is a simulation choice, not a replacement for tracking exploration time.
+
+Session encounter profiles (`session_stablehand`, `session_hostess`) are
+IIRPG-authored nonlethal prototype examples. Their numeric statistics and
+unarmed damage are scenario parameters, not reproduced published NPC blocks.

@@ -49,7 +49,7 @@ def npc_context(state: dict, scene: dict, profile: dict) -> tuple[dict, dict[str
                 consequences[key] = {'cost': 1, 'target': contact['id'], 'attack_modifier': actor['attack'] + penalty - status_penalty(actor),
                                      'repeat_penalty': penalty, 'loses_cover': bool(actor.get('cover')),
                                      'target_defence': 'unknown', 'target_condition': contact['condition']}
-        if not actor['shield']:
+        if not actor['shield'] and actor.get('has_shield',True):
             commands['shield'] = {'action': 'shield'}
             consequences['shield'] = {'cost': 1, 'effective_ac_after': base_ac + max(state['rules']['shield_bonus'], (actor.get('cover') or {}).get('bonus', 0)),
                                       'ac_gain': max(0, base_ac + state['rules']['shield_bonus'] - own_ac),

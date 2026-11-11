@@ -35,7 +35,7 @@ def available_actions(state: dict, scene: dict | None, roster: dict | None,
     result['actor_id'] = fighter_id(state, index)
     def choice(action, label, cost=1, **parameters):
         return {'label': label, 'cost': cost, 'command': {'action': action, **parameters}}
-    if state['actions'] > 0 and not actor['shield']:
+    if state['actions'] > 0 and not actor['shield'] and actor.get('has_shield',True):
         result['general'].append(choice('shield', 'Поднять щит'))
     result['general'].append(choice('end_turn', 'Закончить ход', 0))
     if state.get('mapped'):

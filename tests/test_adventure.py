@@ -124,3 +124,47 @@ class AdventureTests(unittest.TestCase):
         result=session.execute(self.room,{'revision':0,'character_id':self.actor,'text':'Иду во двор'},str(uuid4()))
         self.assertEqual(result['location'],'yard')
         self.assertEqual(result['history'][-1]['action'],'move')
+    def test_attack_starts_one_linked_combat_and_returns_result_to_story(self):
+        client=GMClient();session=AdventureStore(AIService(self.combat,self.scene,load_config(),client))
+        # Use a live, adjacent story NPC; no attack result is awarded before initiative.
+        with self.store._connection() as c:
+            c.execute('INSERT INTO adventures VALUES(?,?)',(self.room,json.dumps({'revision':0,'location':'yard','book':False,'history':[],'character_id':self.actor})))
+        client.complete=lambda *args:{'content':json.dumps({'narration':'Нападение.','action':'combat','destination':'','location_after':'yard','skill':'','objective':'stablehand'})}
+        command={'revision':0,'character_id':self.actor,'text':'Бью конюха'};key=str(uuid4())
+        state=session.execute(self.room,command,key);battle=self.combat.read(self.room)
+        self.assertEqual(state['active_combat']['id'],battle['id'])
+        self.assertEqual(battle['fighters'][1]['name'],'Конюх')
+        self.assertEqual(battle['actions'],3);self.assertNotIn('pending_check',state)
+        self.assertEqual(session.execute(self.room,command,key),state)
+        self.assertEqual(self.combat.read(self.room),battle)
+        with self.assertRaisesRegex(ValueError,'Идёт бой'):
+            session.execute(self.room,{**command,'revision':state['revision'],'text':'Иду в зал'},str(uuid4()))
+        self.combat.roll_die=lambda sides:20 if sides==20 else 4
+        for _ in range(30):
+            if battle['status']=='finished':break
+            action='strike' if battle['actions'] else 'end_turn'
+            battle=self.combat.execute(self.room,{'revision':battle['revision'],'action':action},str(uuid4()))
+        self.assertEqual(battle['status'],'finished')
+        after=session.read(self.room)
+        self.assertNotIn('active_combat',after)
+        self.assertEqual(after['history'][-1]['action'],'combat_result')
+        self.assertEqual(session.read(self.room),after)
+        self.assertIn('hero_hp',after)
+
+    def test_combat_rejects_npc_in_another_room_without_spawning_battle(self):
+        client=GMClient();session=AdventureStore(AIService(self.combat,self.scene,load_config(),client))
+        client.complete=lambda *args:{'content':json.dumps({'narration':'Нападение.','action':'combat','destination':'','skill':'','objective':'stablehand'})}
+        with self.assertRaisesRegex(ValueError,'рядом'):
+            session.execute(self.room,{'revision':0,'character_id':self.actor,'text':'Атакую конюха'},str(uuid4()))
+        self.assertEqual(self.combat.read(self.room)['status'],'idle')
+    def test_story_combat_archives_unrelated_training_encounter(self):
+        old=self.combat.execute(self.room,{'action':'start','revision':0,'character_id':self.actor},str(uuid4()))
+        client=GMClient();session=AdventureStore(AIService(self.combat,self.scene,load_config(),client))
+        client.complete=lambda *args:{'content':json.dumps({'narration':'Драка.','action':'combat','destination':'','skill':'','objective':''})}
+        # In the hall the only present named NPC is the hostess.
+        state=session.execute(self.room,{'revision':0,'character_id':self.actor,'text':'Нападаю на хозяйку'},str(uuid4()))
+        self.assertNotEqual(state['active_combat']['id'],old['id'])
+        with self.store._connection() as c:
+            archived=json.loads(c.execute('SELECT body FROM session_training_archive WHERE room_id=? AND encounter_id=?',(self.room,old['id'])).fetchone()[0])
+        self.assertEqual(archived,old)
+        self.assertEqual(self.combat.read(self.room)['fighters'][1]['name'],'Хозяйка')

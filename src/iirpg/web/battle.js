@@ -250,12 +250,12 @@ function renderControls(){
   q('#retry-action').hidden=!retry;q('#retry-action').disabled=busy;
   if(draftActor&&draftActor!==actorId()&&q('#intent-text').value){const name=battle?.fighters?.find(f=>f.entity_id===draftActor)?.name||'предыдущего героя';q('#draft-owner').textContent=`Черновик для ${name}. Дождитесь его хода или очистите поле.`;}else q('#draft-owner').textContent='';
 }
-function render(){renderActive();renderQueue();renderIntents();renderControls();renderMap();renderJournal();scheduleNpc();}
+function render(){q('#back-to-story').hidden=!battle?.session_link;renderActive();renderQueue();renderIntents();renderControls();renderMap();renderJournal();scheduleNpc();}
 async function refresh(){
   if(!session.ready||busy||(refreshing&&refreshEpoch===session.generation))return;const epoch=session.generation,room=session.room;refreshing=true;refreshEpoch=epoch;
   try{const [b,s,r,a,g,templates]=await Promise.all([session.request(`/api/rooms/${room}/combat`),session.request(`/api/rooms/${room}/scene`),session.request(`/api/rooms/${room}/roster`),session.request('/api/ai'),session.request('/api/combat/groups'),session.request('/api/combat/presets')]);
     if(epoch!==session.generation||busy)return;
-    const previous=battle?.id;battle=b;scene=s;roster=r;ai=a;groups=g.groups;presets=templates.presets;
+    const previous=battle?.id;if(b.session_link&&b.id!==previous)q('#auto-npc').checked=true;battle=b;scene=s;roster=r;ai=a;groups=g.groups;presets=templates.presets;
     if(!previous&&b.status==='active'){q('#battle-preparation').open=false;chosenHeroes=new Set(b.fighters.filter((f,i)=>side(f,i)==='players').map(f=>f.character_id));}
     if(previous&&previous!==b.id){selectedPosition=null;mapKey=queueKey=journalKey=intentsKey='';}
     actionFailedKey='';render();session.connection(true);q('#notice').hidden=true;

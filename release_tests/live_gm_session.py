@@ -28,6 +28,20 @@ def main():
     try:
      before=server.adventure.read(room);state=server.adventure.execute(room,{'revision':before['revision'],'character_id':actor,'text':text},str(uuid4()))
      entry={'input':text,'reply':state['history'][-1],'location':state['location'],'book':state['book'],'completed':state.get('completed',False)}
+     if state.get('active_combat'):
+      battle=server.combat.read(room);npc_calls=0
+      for _ in range(30):
+       if battle['status']=='finished':break
+       if battle['fighters'][battle['turn']]['team']=='enemies' and battle['actions']:
+        npc_calls+=1
+        if npc_calls>8:raise AssertionError('NPC request bound exceeded')
+        server.combat.roll_die=lambda sides:10 if sides==20 else 1
+        battle=server.ai.step(room,{'revision':battle['revision']},str(uuid4()))['combat']
+       else:
+        server.combat.roll_die=lambda sides:20 if sides==20 else 4
+        battle=server.combat.execute(room,{'revision':battle['revision'],'action':'strike' if battle['actions'] else 'end_turn'},str(uuid4()))
+      assert battle['status']=='finished'
+      state=server.adventure.read(room);entry['combat_result']=state['history'][-1]
      if state.get('pending_check'):
       pending=state['pending_check'];service=ChatService(server.service.store,DiceTool(roll_die=lambda sides:natural))
       payload={'sender':'first','type':'tool.call','tool':'dice.roll','request_id':pending['roll_request_id'],'offer_id':pending['offer_id']}

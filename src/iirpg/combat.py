@@ -1,4 +1,5 @@
 """Persistent team training encounters, separate from character saves."""
+from contextlib import nullcontext
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
@@ -77,7 +78,7 @@ class CombatStore:
             if roster: self.hydrate_skills(state, roster)
             return available_actions(state, scene, roster, position, target_id)
 
-    def execute(self, room: str, command: dict, request_id: str) -> dict:
+    def execute(self, room: str, command: dict, request_id: str, *, _connection=None, _session=None) -> dict:
         try:
             UUID(request_id)
         except (ValueError, TypeError, AttributeError):
@@ -85,8 +86,8 @@ class CombatStore:
         if set(command) - {'action', 'revision', 'character_id', 'character_ids', 'actor_id', 'position', 'target_id', 'group_id', 'preset_id', 'text', 'intent_id', 'effect', 'summary', 'delivery', 'review', 'requested_action'}:
             raise ValueError('Неизвестные поля боя.')
         encoded = json.dumps(command, sort_keys=True, allow_nan=False)
-        with self.store._connection() as c:
-            c.execute('BEGIN IMMEDIATE')
+        with (nullcontext(_connection) if _connection is not None else self.store._connection()) as c:
+            if _connection is None:c.execute('BEGIN IMMEDIATE')
             self.store._require_room(c, room)
             prior = c.execute('SELECT command,response FROM encounter_requests WHERE room_id=? AND request_id=?', (room, request_id)).fetchone()
             if prior:
@@ -178,7 +179,7 @@ class CombatStore:
                     owner = next((p['name'] for p in roster['players'] if p['id'] == actor.get('player_id')), None)
                     heroes.append({'name': actor['name'], 'character_id': actor['id'], 'entity_id': actor['id'],
                         'player_id': actor.get('player_id'), 'player_name': owner, 'team': 'players',
-                        'hp': actor['sheet']['values']['hp_current'], 'ac': stats['armor_class'], 'perception': stats['perception'],
+                        'hp': actor['sheet']['values']['hp_current'], 'max_hp':actor['sheet']['values']['hp_max'], 'ac': stats['armor_class'], 'perception': stats['perception'],
                         'attack': strength + actor['sheet']['values'].get('level', 1) + self.rules['player']['proficiency_offset'],
                         'damage_die': self.rules['player']['die'], 'damage_bonus': strength,
                         'speed': actor['sheet']['values'].get('speed', 25)})
@@ -189,6 +190,9 @@ class CombatStore:
                 if not group:
                     raise ValueError('Выберите существующую учебную группу.')
                 enemies = [{**deepcopy(self.rules['opponent']), **deepcopy(member), 'team': 'enemies'} for member in group['members']]
+                if _session is not None and _session.get('hero_hp') is not None:
+                    if _session['hero_hp']<=0:raise ValueError('Герой выбыл из столкновения и пока не может снова драться.')
+                    heroes[0]['hp']=min(heroes[0]['hp'],_session['hero_hp'])
                 enemy = enemies[0]
                 player = heroes[0]
                 fighters = [*heroes, *enemies]
@@ -197,7 +201,7 @@ class CombatStore:
                     member['entity_id'] = f'training:{encounter_id}:{i}'
                     member.setdefault('languages', ['common'])
                 for fighter in fighters:
-                    fighter.update(max_hp=fighter['hp'], shield=False)
+                    fighter.update(max_hp=fighter.get('max_hp',fighter['hp']), shield=False)
                     fighter['initiative_die'] = self.roll_die(20)
                     fighter['initiative'] = fighter['initiative_die'] + fighter['perception']
                 # NPC wins tied initiative against PCs.
@@ -205,6 +209,7 @@ class CombatStore:
                 state = {'revision': state['revision'], 'id': encounter_id, 'status': 'active', 'rules': self.rules,
                          'fighters': fighters, 'turn': order[0], 'initiative_order': order, 'round': 1,
                          'actions': self.rules['actions'], 'attacks': 0, 'log': [], 'intents': [], 'journal': [], 'group_id': group_id, 'group_name': group['name']}
+                if _session is not None:state['session_link']=deepcopy(_session)
                 self.hydrate_skills(state, roster)
                 if preset:
                     state['preset_id'] = preset['id']
@@ -234,7 +239,7 @@ class CombatStore:
                             for x,tile in enumerate(row_text):
                                 if tile=='#' or [x,y] in occupied:continue
                                 path=route(scene,position,[x,y])
-                                if path:possible.append((abs(len(path)-4),len(path),[x,y]))
+                                if path:possible.append((abs(len(path)-(2 if _session is not None else 4)),len(path),[x,y]))
                         if not possible:raise ValueError('На карте недостаточно свободных клеток для группы.')
                         member['position']=min(possible)[2]
                         occupied.append(member['position'])
@@ -365,6 +370,7 @@ class CombatStore:
                     record('tip_over', result['text'], before)
                     events[-1]['details']['check'] = result
                 elif action == 'shield':
+                    if not state['fighters'][turn].get('has_shield',True):raise ValueError('У участника нет щита.')
                     if state['actions'] <= 0:
                         raise ValueError('Действия закончились.')
                     state['actions'] -= 1
@@ -468,7 +474,7 @@ class CombatStore:
         state['attacks'] += 1
         state['last_attack'] = {'natural': natural, 'total': total, 'dc': dc, 'map': penalty, 'degree': outcome, 'damage_die': damage_roll, 'damage': damage, 'target_index': victim}
         label = ['критический провал', 'промах', 'попадание', 'критическое попадание'][outcome]
-        text = f"{attacker['name']} — удар мечом: d20={natural}, итог {total} против КБ {dc} — {label}; урон {damage}. ОЗ цели {target['hp']}/{target['max_hp']}."
+        text = f"{attacker['name']} — удар {attacker.get('weapon','мечом')}: d20={natural}, итог {total} против КБ {dc} — {label}; урон {damage}. ОЗ цели {target['hp']}/{target['max_hp']}."
         self.finish_if_won(state)
         if state['status'] == 'finished':
             text += f" Учебный бой окончен. Победитель: {state['winner']}."

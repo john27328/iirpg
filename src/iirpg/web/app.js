@@ -205,6 +205,7 @@ class Chat {
     time.dateTime = message.created_at;
     time.textContent = new Date(message.created_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
     item.append(label, text);
+    if(message.metadata?.combat_id){const link=document.createElement('a');link.className='button-secondary';link.textContent='Открыть бой';link.href='/battle#'+roomFragment();item.append(link);}
     if (!outgoing && message.choices?.length) {
       const choices = document.createElement("div");
       choices.className = "reply-choices";

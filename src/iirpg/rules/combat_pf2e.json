@@ -112,6 +112,44 @@
           "intimidation": 1
         }
       ]
+    },
+    "session_stablehand": {
+      "name": "Столкновение: Конюх",
+      "members": [
+        {
+          "name": "Конюх",
+          "role": "leader",
+          "hp": 12,
+          "ac": 14,
+          "attack": 4,
+          "damage_die": 4,
+          "damage_bonus": 1,
+          "perception": 2,
+          "will": 3,
+          "intimidation": 2,
+          "weapon": "кулаком",
+          "has_shield": false
+        }
+      ]
+    },
+    "session_hostess": {
+      "name": "Столкновение: Хозяйка",
+      "members": [
+        {
+          "name": "Хозяйка",
+          "role": "leader",
+          "hp": 12,
+          "ac": 14,
+          "attack": 4,
+          "damage_die": 4,
+          "damage_bonus": 1,
+          "perception": 2,
+          "will": 3,
+          "intimidation": 2,
+          "weapon": "кулаком",
+          "has_shield": false
+        }
+      ]
     }
   }
 }

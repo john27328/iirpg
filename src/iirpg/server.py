@@ -185,7 +185,9 @@ class ChatHandler(BaseHTTPRequestHandler):
                 return
         gm_intent_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/ai/gm/intent', route.path)
         if method == 'POST' and gm_intent_match:
-            self._json(200, self.server.ai.analyze_intent(gm_intent_match.group(1), self._body(), self.headers.get('Idempotency-Key', '')))
+            result = self.server.ai.analyze_intent(gm_intent_match.group(1), self._body(), self.headers.get('Idempotency-Key', ''))
+            self.server.adventure.read(gm_intent_match.group(1))
+            self._json(200, result)
             return
         ai_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/ai/npc/(context|step)', route.path)
         if ai_match:
@@ -193,7 +195,9 @@ class ChatHandler(BaseHTTPRequestHandler):
                 self._json(200, self.server.ai.preview(ai_match.group(1)))
                 return
             if method == 'POST' and ai_match.group(2) == 'step':
-                self._json(200, self.server.ai.step(ai_match.group(1), self._body(), self.headers.get('Idempotency-Key', '')))
+                result = self.server.ai.step(ai_match.group(1), self._body(), self.headers.get('Idempotency-Key', ''))
+                self.server.adventure.read(ai_match.group(1))
+                self._json(200, result)
                 return
         if method == "GET" and route.path == "/api/maps/schema":
             self._json(200, json.loads((DEFAULT_INVENTORY_RULES.parent / "map_schema.json").read_text()))
@@ -223,7 +227,9 @@ class ChatHandler(BaseHTTPRequestHandler):
                 self._json(200, self.server.combat.read(combat_match.group(1)))
                 return
             if method == "POST":
-                self._json(200, self.server.combat.execute(combat_match.group(1), self._body(), self.headers.get("Idempotency-Key", "")))
+                result = self.server.combat.execute(combat_match.group(1), self._body(), self.headers.get("Idempotency-Key", ""))
+                self.server.adventure.read(combat_match.group(1))
+                self._json(200, result)
                 return
         debug_match = DEBUG_ROUTE.fullmatch(route.path)
         if method == "GET" and debug_match:
