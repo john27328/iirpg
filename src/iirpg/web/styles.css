@@ -59,3 +59,5 @@
 
 .battle-entry{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px;border:1px solid #506046;border-radius:10px;margin:18px 0;background:#20291e}.battle-entry h2{font-size:16px;margin:0 0 7px}.battle-entry p{color:var(--muted);font-size:12px;margin:0}.battle-entry a,.scene-battle-link{color:var(--green);font-size:13px;white-space:nowrap}.scene-battle-link{display:block;margin:12px 0}@media(max-width:680px){.battle-entry{align-items:flex-start;flex-direction:column}.page-nav{gap:4px}.page-nav .page-link{padding:7px 8px}}
 @media(max-width:680px){.workspace>.topbar{height:auto;min-height:85px;display:grid;grid-template-columns:1fr auto;padding:14px 0;gap:12px}.workspace>.topbar .page-nav{grid-row:2;grid-column:1/-1;justify-self:start}.workspace>.topbar .connection{grid-column:2;grid-row:1}}
+
+.gm-thinking{padding:12px;color:#b9cfa8;font-style:italic}

@@ -143,7 +143,7 @@ class Chat {
   }
 
   update() {
-    this.input.disabled = !ready || this.busy;
+    this.input.disabled = !ready;
     this.audience.disabled = !ready || this.busy;
     this.button.disabled = !ready || this.busy || !this.input.value.trim();
     this.element.querySelectorAll(".reply-choice").forEach((button) => {
@@ -161,6 +161,7 @@ class Chat {
   hasDraft() { return Boolean(this.input.value.trim()); }
 
   reset() {
+    this.thinking?.remove();
     this.ids.clear();
     this.toolCalls.clear();
     this.cursor = 0;
@@ -177,6 +178,7 @@ class Chat {
   }
 
   receive(message) {
+    if(message.metadata?.client_request_id===this.retry?.request_id)this.optimistic?.remove();
     if (this.ids.has(message.id)) return;
     this.ids.add(message.id);
     $(".empty-state", this.list)?.remove();
@@ -274,6 +276,13 @@ class Chat {
     const outcome = document.createElement("span");
     outcome.className = "dice-outcome";
     outcome.textContent = roll ? (roll.success ? "Успех" : "Неудача") : (offer && !call ? "Ожидает броска" : "Бросок…");
+    if(roll&&source.metadata?.session_check){
+      const natural=roll.rolls[0].values[0],dc=criterion.target,total=roll.result;
+      let degree=total>=dc+10?3:total>=dc?2:total<=dc-10?0:1;
+      degree=Math.max(0,Math.min(3,degree+(natural===20?1:natural===1?-1:0)));
+      outcome.textContent=['Критический провал','Провал','Успех','Критический успех'][degree];
+      item.classList.toggle('dice-success',degree>=2);item.classList.toggle('dice-failure',degree<2);
+    }
     line.append(formula, outcome);
     body.append(header);
     if (offer) {
@@ -330,6 +339,11 @@ class Chat {
       });
       if (epoch !== generation) return;
       this.receive(response.message);
+      await refreshChats(targetRoom, epoch);
+      if(offer.metadata?.session_check){
+        const thinking=document.createElement('p');thinking.className='gm-thinking';thinking.setAttribute('role','status');thinking.textContent='Мастер описывает последствия…';this.thinking=thinking;this.list.after(thinking);
+        try{await request(`/api/rooms/${targetRoom}/session/react`,{method:'POST',body:JSON.stringify({offer_id:offer.request_id}),timeoutMs:90000});}finally{thinking.remove();}
+      }
       setConnection(true);
       try { await refreshChats(targetRoom, epoch); } catch {
         if (epoch === generation) setConnection(false);
@@ -341,6 +355,7 @@ class Chat {
         box.textContent = `${error.message} Можно повторить: кости не будут переброшены.`;
         box.hidden = false;
       }
+      if(!box){this.error.textContent='Бросок сохранён. Не удалось получить продолжение мастера: '+error.message;this.error.hidden=false;}
       if (!error.status || error.status >= 500) setConnection(false);
     } finally {
       if (epoch === generation) { this.busy = false; this.update(); }
@@ -370,13 +385,28 @@ class Chat {
     }
     this.busy = true;
     this.error.hidden = true;
+    const draft=text;
+    const optimistic=document.createElement('div');optimistic.className='message outgoing';optimistic.textContent='Вы: '+text;
+    const thinking=document.createElement('p');thinking.className='gm-thinking';thinking.setAttribute('role','status');thinking.textContent='Мастер думает…';
+    if(this.key==='first'&&visibility.mode==='all'){
+      this.list.querySelector('.empty-state')?.remove();this.optimistic=optimistic;this.list.append(optimistic);this.thinking=thinking;this.list.after(thinking);this.list.scrollTop=this.list.scrollHeight;
+      if(choice===null)this.input.value='';
+    }
     this.update();
     try {
-      await request(`/api/rooms/${targetRoom}/messages`, {
+      if(this.key==='first'&&visibility.mode==='all'){
+        if(!this.retry.sessionCommand){
+          const [story,roster]=await Promise.all([request(`/api/rooms/${targetRoom}/session`),request(`/api/rooms/${targetRoom}/roster`)]);
+          const hero=story.character_id||roster.characters.find(c=>c.kind==='pc')?.id;
+          if(!hero)throw new Error('Сначала создайте персонажа во вкладке персонажей.');
+          this.retry.sessionCommand={revision:story.revision,character_id:hero,text};
+        }
+        await request(`/api/rooms/${targetRoom}/session`,{method:'POST',body:JSON.stringify(this.retry.sessionCommand),headers:{'Idempotency-Key':this.retry.request_id},timeoutMs:90000});
+      }else await request(`/api/rooms/${targetRoom}/messages`, {
         method: "POST", body: JSON.stringify(this.retry),
       });
       if (epoch !== generation) return;
-      if (choice === null) this.input.value = "";
+      if (choice === null && this.input.value === draft) this.input.value = "";
       this.retry = null;
       setConnection(true);
       try { await refreshChats(targetRoom, epoch); } catch {
@@ -384,12 +414,15 @@ class Chat {
       }
     } catch (error) {
       if (epoch !== generation) return;
+      if(choice===null&&!this.input.value)this.input.value=draft;
+      if(error.status)this.retry=null;
       this.error.textContent = choice === null
         ? `${error.message} Текст сохранён в поле ввода.`
         : `${error.message} Отправка не подтверждена. Нажмите вариант ещё раз для повтора.`;
       this.error.hidden = false;
       setConnection(false);
     } finally {
+      optimistic.remove();thinking.remove();
       if (epoch === generation) {
         this.busy = false;
         this.update();
@@ -535,7 +568,7 @@ class JsonStub {
   }
 
   update() {
-    this.input.disabled = !ready || this.busy;
+    this.input.disabled = !ready;
     this.newIdButton.disabled = !ready || this.busy;
     this.diceExampleButton.disabled = !ready || this.busy || !diceCatalog;
     this.diceOfferButton.disabled = !ready || this.busy || !diceCatalog;
@@ -757,6 +790,7 @@ async function openRoom(fresh = false) {
     history.replaceState(null, "", `#${roomFragment()}`);
     updatePageLinks();
     rememberRoom(room);
+    if(!isDebug)await request(`/api/rooms/${room}/session`);
     ready = true;
     inventory?.reset(roster);
     accessGate.hidden = true;

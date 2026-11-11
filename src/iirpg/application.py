@@ -4,6 +4,7 @@ from uuid import UUID, uuid5
 
 from .commands import command_payload
 from .dice import SYMBOLS, DiceTool
+from .checks import degree
 from .domain import Chat, Visibility
 from .storage import ChatStore
 
@@ -118,6 +119,13 @@ class ChatService:
 
             def generate() -> dict:
                 result = self.dice.execute(prepared)
+                if offer and offer.get('metadata', {}).get('session_check'):
+                    natural=result['rolls'][0]['values'][0]
+                    outcome=degree(natural,result['result'],arguments['success']['target'])
+                    result['degree']=outcome
+                    result['success']=outcome>=2
+                    label=['критический провал','провал','успех','критический успех'][outcome]
+                    result['summary']=result['summary'].rsplit(' — ',1)[0]+' — '+label+'.'
                 return {**base, "text": result["summary"], "tool_result": result}
 
             return self.store.append_tool_exchange(room_id, request_id, call, expected, generate)

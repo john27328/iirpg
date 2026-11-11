@@ -11,3 +11,5 @@
 .intent-card button{width:100%;margin-top:9px;white-space:normal}.intent-card .confirm-intent{background:#bcd79e;color:#203016}.intent-card .intent-check{font-weight:600;color:#dcebbd}.intent-card .analyze-intent{background:#242f23}.intent-card .input-help{font-size:10px}
 
 .intent-dialogue{max-height:260px;overflow:auto;border-left:2px solid #657452;padding-left:9px;margin:10px 0}.intent-dialogue p{font-size:11px}.intent-dialogue .dialogue-gm{color:#b9cfa8}.intent-card .clarify-intent{background:transparent}#intent-thread{width:100%;margin:7px 0 14px}
+
+#session-text{display:block;width:100%;margin:10px 0;padding:12px}#session-history{max-height:60vh;overflow:auto}#session-hero{max-width:100%;margin:12px 0}

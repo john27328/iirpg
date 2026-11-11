@@ -9,6 +9,7 @@ import re
 import secrets
 from urllib.parse import parse_qs, urlsplit
 
+from .adventure import AdventureStore
 from .ai import AIService, DEFAULT_AI_CONFIG, OpenRouterClient, load_config
 from .scene import SceneStore
 from .combat import CombatStore
@@ -29,6 +30,8 @@ ROSTER_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/roster\Z")
 DEBUG_ROUTE = re.compile(r"/api/rooms/([0-9a-f-]{36})/debug\Z")
 MAX_BODY_SIZE = 65536
 STATIC_FILES = {
+    "/session": ("session.html", "text/html; charset=utf-8"),
+    "/session.js": ("session.js", "text/javascript; charset=utf-8"),
     "/battle": ("battle.html", "text/html; charset=utf-8"),
     "/battle/": ("battle.html", "text/html; charset=utf-8"),
     "/battle.js": ("battle.js", "text/javascript; charset=utf-8"),
@@ -64,6 +67,7 @@ class ChatHTTPServer(ThreadingHTTPServer):
         self.combat = CombatStore(self.roster, self.service.dice.roll_die)
         self.scene = SceneStore(self.roster, self.service.dice.roll_die)
         self.ai = AIService(self.combat, self.scene, load_config(ai_config), OpenRouterClient(openrouter_key_file))
+        self.adventure = AdventureStore(self.ai)
         self.access_token = access_token
         super().__init__(address, ChatHandler)
 
@@ -167,6 +171,18 @@ class ChatHandler(BaseHTTPRequestHandler):
         if method == 'GET' and route.path == '/api/combat/presets':
             self._json(200, {'presets': self.server.combat.presets})
             return
+        reaction_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/session/react', route.path)
+        if method == 'POST' and reaction_match:
+            self._json(200, self.server.adventure.react(reaction_match.group(1), self._body().get('offer_id','')))
+            return
+        session_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/session', route.path)
+        if session_match:
+            if method == 'GET':
+                self._json(200, self.server.adventure.read(session_match.group(1)))
+                return
+            if method == 'POST':
+                self._json(200, self.server.adventure.execute(session_match.group(1), self._body(), self.headers.get('Idempotency-Key','')))
+                return
         gm_intent_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/ai/gm/intent', route.path)
         if method == 'POST' and gm_intent_match:
             self._json(200, self.server.ai.analyze_intent(gm_intent_match.group(1), self._body(), self.headers.get('Idempotency-Key', '')))
@@ -235,6 +251,7 @@ class ChatHandler(BaseHTTPRequestHandler):
         if method == "POST" and dice_match:
             payload = {**self._body(), "type": "tool.call", "tool": "dice.roll"}
             message = self.server.service.send(dice_match.group(1), payload)
+            self.server.adventure.read(dice_match.group(1))
             self._json(201, self._message_response(message))
             return
         match = ROOM_ROUTE.fullmatch(route.path)

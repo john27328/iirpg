@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111414"><title>Сессия с мастером — IIRPG</title>
+  <link rel="icon" href="data:,"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/battle.css">
+  <script type="module" src="/session.js"></script>
+</head>
+<body data-view="battle">
+  <div class="battle-workspace">
+    <header class="topbar">
+      <a class="brand" href="/"><span class="brand-mark">ii</span>IIRPG <span class="brand-label">ИГРА С ВЕДУЩИМ</span></a>
+      <nav class="page-nav" aria-label="Страницы"><a href="/" class="page-link">Игра</a><a href="/battle" class="page-link" aria-current="page">Бой</a><a href="/debug" class="page-link">Отладка</a></nav>
+      <div class="connection" role="status"><span class="status-dot"></span><span id="connection-label">Подключение…</span></div>
+    </header>
+    <main>
+      <div id="notice" class="notice" role="alert" hidden></div>
+      <form id="access-gate" class="notice access-gate" hidden><label for="access-key">Ключ доступа к комнате</label><input id="access-key" type="password" autocomplete="current-password" required><button type="submit">Подключиться</button></form>
+      <header class="battle-heading"><div><div class="eyebrow">ПРИКЛЮЧЕНИЕ</div><h1 id="battle-title">Поле боя</h1><p id="battle-status" role="status">Загружаем обстановку…</p></div><button id="copy-link" class="button-secondary" type="button" disabled>Скопировать ссылку</button></header>
+      <section class="battle-panel"><h2 id="place-title">Пропавшая дорожная книга</h2><p id="place-description">Хозяйка постоялого двора просит найти пропавшую книгу. Вы начинаете в общем зале.</p><label>Ваш персонаж<select id="session-hero"></select></label><p>Это отдельное небольшое приключение без магии. Можно осматриваться, разговаривать, переходить между помещениями и пробовать нестандартные действия. Проверки выполняются кубиками.</p><div id="session-history" role="log" aria-live="polite"></div><form id="session-form"><label for="session-text">Что вы делаете или спрашиваете?</label><textarea id="session-text" maxlength="1000" rows="4" required placeholder="Расспрашиваю хозяйку о пропавшей книге…"></textarea><button id="session-send">Сказать мастеру</button></form><p id="session-error" role="alert"></p><button id="session-retry" hidden>Проверить результат запроса</button></section>
+    </main>
+  </div>
+</body>
+</html>
