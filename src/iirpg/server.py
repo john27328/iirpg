@@ -90,7 +90,7 @@ class ChatHandler(BaseHTTPRequestHandler):
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self'; "
-            "connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
+            "connect-src 'self'; img-src 'self' data:; frame-src 'self'; frame-ancestors 'self'",
         )
         self.end_headers()
         self.wfile.write(body)
@@ -135,8 +135,13 @@ class ChatHandler(BaseHTTPRequestHandler):
 
     def _dispatch(self, method: str) -> None:
         route = urlsplit(self.path)
+        if method == 'GET' and route.path in ('/battle','/battle/','/session','/session/'):
+            self.send_response(302)
+            self.send_header('Location','/?battle=1' if route.path.startswith('/battle') else '/')
+            self.send_header('Content-Length','0');self.end_headers();return
         if method == "GET" and route.path in STATIC_FILES:
             filename, content_type = STATIC_FILES[route.path]
+            if route.path=='/' and parse_qs(route.query).get('view')==['combat']:filename='battle.html'
             self._respond(200, (WEB_ROOT / filename).read_bytes(), content_type)
             return
         if method == "GET" and route.path in RULE_FILES:

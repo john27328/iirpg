@@ -34,7 +34,7 @@ export function createRoomSession(onConnected) {
     }catch(error){if(epoch!==generation)return;connection(false);q('#notice').textContent=error.message;q('#notice').hidden=false;q('#access-gate').hidden=error.status!==401;}
   }
   q('#access-gate').addEventListener('submit',e=>{e.preventDefault();setToken(q('#access-key').value);history.replaceState(null,'','#'+new URLSearchParams({...(read().get('room')?{room:read().get('room')}:{}),access:token}));connect();});
-  q('#copy-link').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(location.origin+link('/battle'));q('#copy-link').textContent='Ссылка скопирована';}catch{q('#notice').textContent='Ссылка на эту комнату находится в адресной строке.';q('#notice').hidden=false;}});
+  q('#copy-link').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(location.origin+link('/?battle=1'));q('#copy-link').textContent='Ссылка скопирована';}catch{q('#notice').textContent='Ссылка на эту комнату находится в адресной строке.';q('#notice').hidden=false;}});
   window.addEventListener('hashchange',connect);
   return {get room(){return room;},get generation(){return generation;},get ready(){return ready;},request,connect,link,updateLinks,connection};
 }

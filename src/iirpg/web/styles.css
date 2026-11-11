@@ -61,3 +61,5 @@
 @media(max-width:680px){.workspace>.topbar{height:auto;min-height:85px;display:grid;grid-template-columns:1fr auto;padding:14px 0;gap:12px}.workspace>.topbar .page-nav{grid-row:2;grid-column:1/-1;justify-self:start}.workspace>.topbar .connection{grid-column:2;grid-row:1}}
 
 .gm-thinking{padding:12px;color:#b9cfa8;font-style:italic}
+
+#combat-frame,#combat-debug-frame{width:100%;height:85vh;border:0;background:#111414;border-radius:12px}#battle-pane{margin-top:18px}

@@ -49,6 +49,7 @@ function roomFragment() {
 }
 
 function updatePageLinks() {
+  if(isDebug&&room)$("#combat-debug-frame").src="/?view=combat&developer=1#"+roomFragment();
   document.querySelectorAll(".page-link, .brand").forEach((link) => {
     link.hash = roomFragment();
   });
@@ -205,7 +206,7 @@ class Chat {
     time.dateTime = message.created_at;
     time.textContent = new Date(message.created_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
     item.append(label, text);
-    if(message.metadata?.combat_id){const link=document.createElement('a');link.className='button-secondary';link.textContent='Открыть бой';link.href='/battle#'+roomFragment();item.append(link);}
+    if(message.metadata?.combat_id){const link=document.createElement('a');link.className='button-secondary';link.textContent='Открыть бой';link.href='/?battle=1#'+roomFragment();link.addEventListener('click',e=>{e.preventDefault();showBattle();});item.append(link);}
     if (!outgoing && message.choices?.length) {
       const choices = document.createElement("div");
       choices.className = "reply-choices";
@@ -711,7 +712,7 @@ class JsonStub {
 }
 
 const context = () => ({ room, generation, ready });
-if (!isDebug) setupScene($("#scene"), request, context, createRequestId);
+if (isDebug) setupScene($("#scene"), request, context, createRequestId);
 const first = isDebug ? null : new Chat("first", "01", "Ваши действия и ответы ведущего");
 const stub = isDebug ? new JsonStub() : null;
 const debug = isDebug ? new DebugPanel($("#debug-inspector"), $("#debug-log"), request, context) : null;
@@ -722,13 +723,20 @@ for (const [id, showInventory] of [["#show-chat", false], ["#show-inventory", tr
   $(id)?.addEventListener("click", () => {
     $("#chats").hidden = showInventory;
     $("#inventory").hidden = !showInventory;
-    $("#scene").hidden = showInventory;
-    $("#battle-entry").hidden = showInventory;
+    $("#battle-pane").hidden=true;$("#combat-frame").src="about:blank";$("#show-battle").setAttribute("aria-pressed","false");
     $("#show-chat").setAttribute("aria-pressed", String(!showInventory));
     $("#show-inventory").setAttribute("aria-pressed", String(showInventory));
     if (showInventory) inventory.refresh(true).catch((error) => inventory.showError(error));
   });
 }
+
+function showBattle(){
+  if(isDebug||!ready)return;
+  $('#chats').hidden=true;$('#inventory').hidden=true;$('#battle-pane').hidden=false;
+  $('#show-chat').setAttribute('aria-pressed','false');$('#show-inventory').setAttribute('aria-pressed','false');$('#show-battle').setAttribute('aria-pressed','true');
+  $('#combat-frame').src='/?view=combat#'+roomFragment();
+}
+$('#show-battle')?.addEventListener('click',showBattle);
 
 async function refreshChats(roomId, epoch) {
   const pages = await Promise.all(chats.map((chat) => chat.read(roomId)));
@@ -786,6 +794,7 @@ async function openRoom(fresh = false) {
     const roster = inventory ? await request(`/api/rooms/${selected}/roster`) : null;
     first?.configureDice(diceCatalog);
     room = selected;
+    if(!isDebug){$('#battle-pane').hidden=true;$('#combat-frame').src='about:blank';$('#chats').hidden=false;$('#inventory').hidden=true;$('#show-chat').setAttribute('aria-pressed','true');$('#show-inventory').setAttribute('aria-pressed','false');$('#show-battle').setAttribute('aria-pressed','false');}
     chats.forEach((chat) => chat.reset());
     initial.forEach((page, index) => chats[index].applyPage(page));
     history.replaceState(null, "", `#${roomFragment()}`);
@@ -793,6 +802,7 @@ async function openRoom(fresh = false) {
     rememberRoom(room);
     if(!isDebug)await request(`/api/rooms/${room}/session`);
     ready = true;
+    if(new URLSearchParams(location.search).get('battle')==='1')showBattle();
     inventory?.reset(roster);
     accessGate.hidden = true;
     copyButton.disabled = false;

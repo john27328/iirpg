@@ -1,5 +1,9 @@
 import {createRoomSession,createId} from '/room-session.js';
 const q=s=>document.querySelector(s);
+const developer=new URLSearchParams(location.search).get('developer')==='1';
+document.body.classList.add('embedded-combat');
+q('#gm-resolution').hidden=!developer;q('#battle-preparation').hidden=!developer;
+q('#npc-actions [data-command]').hidden=!developer;q('#ai-status').hidden=!developer;
 const node=(tag,className='',text='')=>{const el=document.createElement(tag);el.className=className;el.textContent=text;return el;};
 let battle=null,scene=null,roster=null,ai=null,groups={},busy=false,retry=null,refreshing=false;
 let presets=[],selectedPreset=null;
@@ -81,7 +85,7 @@ function renderActive(){
   const f=active();
   if(lastActiveId!==actorId()){selectedPosition=null;targetId='';objectId='';q('#map-selection').textContent='Выберите цель, объект или клетку для текущего участника.';lastActiveId=actorId();}
   q('#battle-title').textContent=scene?.map?.name||'Поле боя';
-  q('#battle-status').textContent=battle?.status==='active'?`${battle.group_name||'Учебный бой'} · ${playerTurn()?'ход вашей группы':'ход противников'}`:battle?.status==='finished'?`Бой окончен · Победитель: ${battle.winner}`:'Выберите героев и противников, чтобы начать.';
+  q('#battle-status').textContent=battle?.status==='active'?`${battle.group_name||'Учебный бой'} · ${playerTurn()?'ход вашей группы':'ход противников'}`:battle?.status==='finished'?`Бой окончен · Победитель: ${battle.winner}`:developer?'Выберите героев и противников, чтобы начать.':'Сейчас боя нет. Продолжайте историю в чате.';
   q('#turn-kind').textContent=battle?.status==='finished'?'БОЙ ЗАВЕРШЁН':playerTurn()?'ХОД ВАШЕЙ ГРУППЫ':enemyTurn()?'ХОД ПРОТИВНИКА':'ТЕКУЩИЙ УЧАСТНИК';
   q('#active-name').textContent=f?.name||'Ожидаем начала';
   q('#active-controller').textContent=f?(side(f,battle.turn)==='players'?`Управляет: ${f.player_name||'вы · вся группа'}`:'Управление: ИИ или обычная тактика'):'';
@@ -100,7 +104,7 @@ function renderMap(){
   const scroll={left:wrapper.scrollLeft,top:wrapper.scrollTop};
   const focus=document.activeElement?.closest('.battle-cell')?.dataset.position;
   wrapper.replaceChildren();
-  if(!scene?.map){wrapper.append(node('p','map-empty','Карта ещё не загружена. Подготовьте её на странице игры или проведите бой без карты.'));return;}
+  if(!scene?.map){wrapper.append(node('p','map-empty','Карта появится, когда начнётся столкновение.'));return;}
   q('#map-description').textContent=scene.map.description||'Выберите клетку или цель.';
   const grid=node('div','battle-grid');grid.style.setProperty('--map-cols',scene.map.rows[0].length);grid.style.setProperty('--cell-size',cellSize+'px');
   scene.map.rows.forEach((row,y)=>[...row].forEach((tile,x)=>{
@@ -244,7 +248,7 @@ function renderControls(){
   q('#resolve-intent').disabled=!allowed;q('#resolve-effect').disabled=!allowed;
   const turnNpc=enemyTurn()&&!busy&&!retry&&session.ready;
   q('#ai-step').disabled=!turnNpc||(battle.actions>0&&(!ai?.configured||ai.requests_today>=ai.daily_request_limit));
-  q('#ai-step').textContent=battle?.actions===0?'Закончить ход NPC':'Одно действие ИИ';
+  q('#ai-step').textContent=battle?.actions===0?'Закончить ход NPC':developer?'Одно действие ИИ':'Продолжить ход противника';
   q('#npc-actions [data-command]').disabled=!turnNpc;
   q('#ai-status').textContent=ai?`${ai.model} · бесплатно · сегодня ${ai.requests_today}/${ai.daily_request_limit}`+(ai.configured?'':' · ключ OpenRouter не добавлен'):'';
   q('#retry-action').hidden=!retry;q('#retry-action').disabled=busy;
@@ -255,7 +259,7 @@ async function refresh(){
   if(!session.ready||busy||(refreshing&&refreshEpoch===session.generation))return;const epoch=session.generation,room=session.room;refreshing=true;refreshEpoch=epoch;
   try{const [b,s,r,a,g,templates]=await Promise.all([session.request(`/api/rooms/${room}/combat`),session.request(`/api/rooms/${room}/scene`),session.request(`/api/rooms/${room}/roster`),session.request('/api/ai'),session.request('/api/combat/groups'),session.request('/api/combat/presets')]);
     if(epoch!==session.generation||busy)return;
-    const previous=battle?.id;if(b.session_link&&b.id!==previous)q('#auto-npc').checked=true;battle=b;scene=s;roster=r;ai=a;groups=g.groups;presets=templates.presets;
+    const previous=battle?.id;if(b.session_link&&b.id!==previous&&!developer)q('#auto-npc').checked=true;battle=developer||b.session_link?b:{revision:b.revision,status:'idle',rules:b.rules};scene=developer||b.session_link?s:null;roster=r;ai=a;groups=g.groups;presets=templates.presets;
     if(!previous&&b.status==='active'){q('#battle-preparation').open=false;chosenHeroes=new Set(b.fighters.filter((f,i)=>side(f,i)==='players').map(f=>f.character_id));}
     if(previous&&previous!==b.id){selectedPosition=null;mapKey=queueKey=journalKey=intentsKey='';}
     actionFailedKey='';render();session.connection(true);q('#notice').hidden=true;
@@ -300,7 +304,7 @@ function scheduleNpc(){
   const enabled=q('#auto-npc').checked;
   q('#auto-npc-status').textContent=battle?.status==='finished'?'Бой завершён. Можно выбрать другую заготовку и сыграть снова.':enabled?(enemyTurn()?'Противник обдумывает ход…':'ИИ ждёт вашего хода.'):'Автоматические ходы приостановлены.';
   if(!enabled||!enemyTurn()||busy||retry||!session.ready||document.hidden)return;
-  if(!aiReady()&&battle.actions>0){q('#auto-npc').checked=false;q('#auto-npc-status').textContent='ИИ недоступен: проверьте ключ или лимит. Можно завершить ход обычной тактикой.';return;}
+  if(!aiReady()&&battle.actions>0){q('#auto-npc').checked=false;q('#auto-npc-status').textContent=developer?'ИИ недоступен: проверьте ключ или лимит. Можно завершить ход обычной тактикой.':'ИИ сейчас недоступен. Автоматические ходы приостановлены.';return;}
   if(npcSteps>=20){q('#auto-npc').checked=false;q('#auto-npc-status').textContent='Пауза после 20 шагов ИИ. Проверьте журнал и включите автоматические ходы для продолжения.';return;}
   const epoch=session.generation,revision=battle.revision;
   npcTimer=setTimeout(()=>{npcTimer=null;if(epoch!==session.generation||revision!==battle?.revision||!q('#auto-npc').checked||!enemyTurn()||busy||retry)return;npcSteps++;q('#ai-step').click();},700);

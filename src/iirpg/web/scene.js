@@ -5,7 +5,7 @@ export function setupScene(root, request, context, createId) {
   const tools=document.createElement('div');tools.className='map-tools';
   tools.innerHTML='<h3>Карта</h3><label>Заготовка<select class="map-template"></select></label><button type="button" class="map-load">Загрузить заготовку</button><button type="button" class="map-download">Скачать JSON заготовки</button><button type="button" class="map-schema">Скачать JSON Schema</button><details><summary>Карта от ИИ / импорт JSON</summary><p>Формат iirpg-map-v1: # стена, . пол, ~ трудная местность. Примеры доступны для скачивания.</p><input class="map-file" type="file" accept=".json,application/json"><textarea class="map-json" rows="8" spellcheck="false" placeholder="Вставьте JSON карты"></textarea><button type="button" class="map-import">Проверить и загрузить JSON</button></details><p>Клетка — 5 футов. Нажмите свободную клетку для перемещения, объект для выбора цели, противника для удара в бою.</p><div class="scene-map" aria-label="Карта сцены"></div><p class="map-status"></p>';
   q('.scene-zones').before(tools);
-  const battleLink=document.createElement('a');battleLink.href='/battle';battleLink.className='page-link scene-battle-link';battleLink.textContent='Открыть бой →';root.querySelector('details>summary').after(battleLink);
+  const battleLink=document.createElement('a');battleLink.href='/?battle=1';battleLink.className='page-link scene-battle-link';battleLink.textContent='Открыть бой →';root.querySelector('details>summary').after(battleLink);
   function renderMap(){
     const wrapper=q('.scene-map');wrapper.replaceChildren();
     if(!state.map){q('.map-status').textContent='Загрузите карту из заготовки или JSON.';return;}

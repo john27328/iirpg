@@ -52,7 +52,7 @@ class ServerTests(unittest.TestCase):
             status, body = self.request(path)
             self.assertEqual(status, 200)
             self.assertIn(marker, body.decode())
-        for path, marker in [('/battle', 'Очередь ходов'), ('/battle/', 'Ваше действие'),
+        for path, marker in [('/?view=combat', 'Очередь ходов'), ('/battle', 'combat-frame'), ('/battle/', 'combat-frame'),
                              ('/battle.js', 'renderQueue'), ('/battle.css', '.battle-layout'),
                              ('/room-session.js', 'createRoomSession')]:
             status, body = self.request(path)
@@ -114,7 +114,13 @@ class ServerTests(unittest.TestCase):
         self.assertIn('data-view="game"', game)
         self.assertIn('id="chat-template"', game)
         self.assertIn('id="inventory"', game)
-        self.assertIn('href="/battle"', game)
+        self.assertIn('id="combat-frame"', game)
+        self.assertIn('id="show-battle"', game)
+        self.assertNotIn('id="scene"',game)
+        self.assertNotIn('href="/battle"',game)
+        self.assertNotIn('href="/session"',game)
+        self.assertIn('id="scene"',debug)
+        self.assertIn('id="combat-debug-frame"',debug)
         self.assertNotIn('id="combat"', game)
         self.assertNotIn('id="json-stub-template"', game)
         self.assertNotIn('id="debug-inspector"', game)
