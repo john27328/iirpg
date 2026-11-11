@@ -19,10 +19,11 @@
     <main>
       <section class="intro" aria-labelledby="page-title">
         <div><div class="eyebrow">ПРИКЛЮЧЕНИЕ <span> / IIRPG</span></div><h1 id="page-title">Ваша история. <span>Ваш следующий ход.</span></h1><p>Продолжайте приключение, следите за персонажами и собирайте снаряжение.</p></div>
-        <div class="room-actions"><button id="copy-link" class="button-secondary" disabled>Скопировать ссылку</button><button id="new-room" hidden class="button-icon" title="Новый диалог" aria-label="Начать новый диалог" disabled>＋</button></div>
+        <div class="room-actions"><button type="button" id="games-toggle" class="button-secondary">Сеансы</button><button id="copy-link" class="button-secondary" disabled>Скопировать ссылку</button><button id="new-room" hidden class="button-icon" title="Новый диалог" aria-label="Начать новый диалог" disabled>＋</button></div>
       </section>
       <div id="notice" class="notice" role="alert" hidden></div>
       <form id="access-gate" class="notice access-gate" hidden><label for="access-key">Ключ доступа к диалогу</label><input id="access-key" type="password" autocomplete="current-password" placeholder="Вставьте ключ из вашей ссылки" required><button class="button-secondary" type="submit">Открыть чат</button></form>
+      <section id="games-menu" class="battle-panel" hidden aria-label="Сеансы игры"><h2>Мои игры</h2><p>Прогресс сохраняется автоматически. Кнопка «Сохранить» создаёт точку, к которой можно вернуться.</p><button id="game-save" type="button">Сохранить текущую игру</button><form id="game-create"><label>Название<input id="game-name" maxlength="100" value="Новое приключение" required></label><label>Сценарий<select id="game-scenario"></select></label><button>Новая игра</button></form><p id="games-status" role="status"></p><div id="games-list"></div></section>
       <nav class="workspace-tabs" aria-label="Разделы комнаты"><button type="button" id="show-chat" aria-pressed="true">Диалог</button><button type="button" id="show-inventory" aria-pressed="false">Персонажи и инвентарь</button><button type="button" id="show-battle" aria-pressed="false">Бой</button></nav>
 
 

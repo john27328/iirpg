@@ -800,7 +800,7 @@ async function openRoom(fresh = false) {
     history.replaceState(null, "", `#${roomFragment()}`);
     updatePageLinks();
     rememberRoom(room);
-    if(!isDebug)await request(`/api/rooms/${room}/session`);
+    if(!isDebug){await request(`/api/rooms/${room}/session`);await request('/api/games',{method:'POST',headers:{'Idempotency-Key':createRequestId()},body:JSON.stringify({action:'register',room_id:room})});}
     ready = true;
     if(new URLSearchParams(location.search).get('battle')==='1')showBattle();
     inventory?.reset(roster);
@@ -857,3 +857,51 @@ accessGate.addEventListener("submit", (event) => {
   openRoom();
 });
 openRoom();
+
+let gameOperation=null,gameBusy=false;
+function gameLocked(){return switching||gameBusy||inventory?.busy||chats.some(c=>c.busy);}
+async function showGames(){
+ if(isDebug)return;
+ try{
+  const data=await request('/api/games');
+  $('#game-save').disabled=!ready||gameLocked();
+  $('#game-scenario').replaceChildren(...data.scenarios.map(s=>new Option(s.name,s.id)));
+  $('#games-list').replaceChildren(...data.games.map(game=>{
+   const row=document.createElement('article');row.className='saved-game';
+   const title=document.createElement('strong');title.textContent=game.name+(game.room_id===room?' · текущая':'');
+   const info=document.createElement('p');info.textContent=game.saved_at?'Точка сохранения: '+new Date(game.saved_at).toLocaleString('ru-RU'):'Прогресс сохраняется автоматически';row.append(title,info);
+   const button=(text,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=text;b.disabled=gameLocked();b.addEventListener('click',fn);row.append(b);return b;};
+   button('Продолжить',()=>switchGame(game.room_id));
+   if(game.has_save)button('Загрузить сохранение',()=>{if(confirm('Вернуться к точке сохранения «'+game.name+'»? Последующие действия будут отменены.'))runGame({action:'load',room_id:game.room_id});});
+   button('Удалить',()=>{if(confirm('Удалить игру «'+game.name+'» и её историю?'))runGame({action:'delete',room_id:game.room_id});});
+   return row;
+  }));
+ }catch(e){$('#games-status').textContent=e.message;}
+}
+function switchGame(id,discardConfirmed=false){
+ if(gameLocked())return;
+ if(!discardConfirmed&&(inventory?.hasDraft()||chats.some(c=>c.hasDraft()))&&!confirm('Переключить игру? Неотправленный черновик будет очищен.'))return;
+ $('#games-menu').hidden=true;$('#combat-frame').src='about:blank';
+ location.href='/#'+new URLSearchParams({room:id,...(accessToken?{access:accessToken}:{})});
+ if(id===room)location.reload();
+}
+async function runGame(command){
+ if(gameLocked()){$('#games-status').textContent='Дождитесь завершения текущего действия.';return;}
+ if((command.action==='create'||command.action==='load'||command.action==='delete'&&command.room_id===room)&&(inventory?.hasDraft()||chats.some(c=>c.hasDraft()))&&!confirm('Неотправленный черновик будет очищен. Продолжить?'))return;
+ gameBusy=true;$('#games-status').textContent='Выполняю…';
+ if(!gameOperation||JSON.stringify(gameOperation.command)!==JSON.stringify(command))gameOperation={command,id:createRequestId()};
+ try{
+  const result=await request('/api/games',{method:'POST',body:JSON.stringify(command),headers:{'Idempotency-Key':gameOperation.id}});
+  gameOperation=null;$('#games-status').textContent=command.action==='save'?'Игра сохранена.':'Готово.';
+  if(command.action==='create'||command.action==='load'){gameBusy=false;switchGame(result.room_id,true);return;}
+  if(command.action==='delete'&&command.room_id===room){
+   const list=await request('/api/games');
+   if(list.games.length){gameBusy=false;switchGame(list.games[0].room_id,true);return;}
+   ready=false;generation++;clearTimeout(timer);chats.forEach(c=>c.update());$('#combat-frame').src='about:blank';$('#chats').hidden=true;$('#inventory').hidden=true;$('#battle-pane').hidden=true;$('#games-status').textContent='Игра удалена. Начните новую игру.';
+  }
+ }catch(e){$('#games-status').textContent=e.message;if(e.status)gameOperation=null;}
+ finally{gameBusy=false;await showGames();}
+}
+$('#games-toggle')?.addEventListener('click',()=>{$('#games-menu').hidden=!$('#games-menu').hidden;if(!$('#games-menu').hidden){$('#combat-frame').contentWindow?.postMessage({type:'pause-for-game-menu'},location.origin);showGames();}});
+$('#game-save')?.addEventListener('click',()=>{if(ready)runGame({action:'save',room_id:room});});
+$('#game-create')?.addEventListener('submit',e=>{e.preventDefault();runGame({action:'create',name:$('#game-name').value,scenario:$('#game-scenario').value});});

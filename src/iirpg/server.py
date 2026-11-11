@@ -10,6 +10,7 @@ import secrets
 from urllib.parse import parse_qs, urlsplit
 
 from .adventure import AdventureStore
+from .game_sessions import GameSessions
 from .ai import AIService, DEFAULT_AI_CONFIG, OpenRouterClient, load_config
 from .scene import SceneStore
 from .combat import CombatStore
@@ -68,6 +69,7 @@ class ChatHTTPServer(ThreadingHTTPServer):
         self.scene = SceneStore(self.roster, self.service.dice.roll_die)
         self.ai = AIService(self.combat, self.scene, load_config(ai_config), OpenRouterClient(openrouter_key_file))
         self.adventure = AdventureStore(self.ai)
+        self.games = GameSessions(self.adventure)
         self.access_token = access_token
         super().__init__(address, ChatHandler)
 
@@ -157,6 +159,9 @@ class ChatHandler(BaseHTTPRequestHandler):
             if not secrets.compare_digest(received, expected):
                 self._json(401, {"error": "Нужен ключ доступа из вашей секретной ссылки."})
                 return
+        if route.path == '/api/games':
+            if method == 'GET':self._json(200,self.server.games.list());return
+            if method == 'POST':self._json(200,self.server.games.execute(self._body(),self.headers.get('Idempotency-Key','')));return
         if method == "POST" and route.path == "/api/rooms":
             self._body()
             self._json(201, {"room_id": self.server.service.store.create_room()})

@@ -42,6 +42,7 @@ class AdventureStore:
     def publish(self,c,room,state):
         start=state['revision']-len(state['history'])
         for index,entry in enumerate(state['history'],start+1):
+            index=entry.get('chat_index',index)
             for sender,text in (('first',entry['player']),('second',entry['gm']+'\n\n'+entry.get('result',''))):
                 if not text.strip():continue
                 key=str(uuid5(UUID(entry['player_request_id']),'session.player')) if sender=='first' and entry.get('player_request_id') else str(uuid5(UUID(room),f'session:{index}:{sender}'))
@@ -104,7 +105,7 @@ class AdventureStore:
             row=c.execute('SELECT envelope FROM queue_events WHERE room_id=? AND request_id=?',(room,str(uuid5(UUID(str(uuid5(UUID(offer_id),'dice.offer.accept'))),'tool.result')))).fetchone()
         if not row:raise ValueError('Сначала выполните проверку.')
         if not json.loads(row[0]).get('metadata',{}).get('session_check'):raise ValueError('Это не проверка сессии.')
-        key=str(uuid5(UUID(offer_id),'session.reaction'))
+        key=str(uuid5(UUID(offer_id),'session.reaction'+(':'+state['timeline_id'] if state.get('timeline_id') else '')))
         with self.store._connection() as c:
             prior=c.execute('SELECT body FROM adventure_requests WHERE room_id=? AND request_id=?',(room,key)).fetchone()
         if prior and json.loads(prior[0]).get('status')=='done':return json.loads(prior[0])['result']
@@ -139,7 +140,7 @@ class AdventureStore:
             if not self.ai.client.ready():raise ValueError('Ключ бесплатного ИИ не настроен.')
             if c.execute('SELECT 1 FROM ai_requests WHERE room_id=? AND request_id=?',(room,key)).fetchone():raise MessageConflict('UUID уже использован другим запросом ИИ.')
             now=time.time()
-            count=c.execute("SELECT COUNT(*) FROM ai_requests WHERE date(started,'unixepoch')=date(?,'unixepoch')",(now,)).fetchone()[0]
+            count=c.execute("SELECT (SELECT COUNT(*) FROM ai_requests WHERE date(started,'unixepoch')=date(?,'unixepoch')) + COALESCE((SELECT count FROM ai_deleted_usage WHERE day=date(?,'unixepoch')),0)",(now,now)).fetchone()[0]
             if count>=self.ai.config['daily_request_limit']:raise ValueError('Достигнут дневной лимит ИИ.')
             if any(json.loads(r[0]).get('status') in ('running','chosen') for r in c.execute('SELECT body FROM ai_requests WHERE started>?',(now-120,))):raise MessageConflict('Другой запрос ИИ ещё выполняется.')
             stats=CharacterRules(roster['character_rules']).statistics(actor['sheet'],actor['attributes'])

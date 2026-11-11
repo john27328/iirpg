@@ -105,6 +105,7 @@ class AIService:
         self.combat, self.scene, self.store = combat, scene, combat.store
         self.config, self.client, self.now = config, client, now
         with self.store._connection() as c:
+            c.execute('CREATE TABLE IF NOT EXISTS ai_deleted_usage(day TEXT PRIMARY KEY, count INTEGER NOT NULL)')
             c.execute('''CREATE TABLE IF NOT EXISTS ai_requests(
                 room_id TEXT NOT NULL REFERENCES rooms(id), request_id TEXT NOT NULL,
                 command TEXT NOT NULL, started REAL NOT NULL, body TEXT NOT NULL,
@@ -113,7 +114,7 @@ class AIService:
     def status(self) -> dict:
         today = datetime.fromtimestamp(self.now(), timezone.utc).date().isoformat()
         with self.store._connection() as c:
-            used = c.execute("SELECT COUNT(*) FROM ai_requests WHERE date(started,'unixepoch')=?", (today,)).fetchone()[0]
+            used = c.execute("SELECT (SELECT COUNT(*) FROM ai_requests WHERE date(started,'unixepoch')=?) + COALESCE((SELECT count FROM ai_deleted_usage WHERE day=?),0)", (today,today)).fetchone()[0]
         return {'provider': 'openrouter', 'model': self.config['model'], 'configured': self.client.ready(),
                 'daily_request_limit': self.config['daily_request_limit'], 'requests_today': used,
                 'free_only': True}
@@ -213,7 +214,7 @@ class AIService:
                 if not self.client.ready():
                     raise ValueError('Добавьте ключ OpenRouter в локальный файл ключа на сервере.')
                 today = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
-                count = c.execute("SELECT COUNT(*) FROM ai_requests WHERE date(started,'unixepoch')=?", (today,)).fetchone()[0]
+                count = c.execute("SELECT (SELECT COUNT(*) FROM ai_requests WHERE date(started,'unixepoch')=?) + COALESCE((SELECT count FROM ai_deleted_usage WHERE day=?),0)", (today,today)).fetchone()[0]
                 if count >= self.config['daily_request_limit']:
                     raise ValueError('Достигнут локальный дневной лимит запросов ИИ (UTC).')
                 active = c.execute("SELECT body FROM ai_requests WHERE started>?", (now - 120,)).fetchall()

@@ -335,3 +335,5 @@ q('#zoom-in').addEventListener('click',()=>{cellSize=Math.min(68,cellSize+6);ren
 q('#resolve-intent').addEventListener('change',renderControls);
 q('#intent-thread').addEventListener('change',()=>{selectedThread=q('#intent-thread').value;q('#intent-text').placeholder=q('#intent-thread').value?'Уточните замысел или задайте вопрос ведущему…':'Опишите новое действие…';});
 setInterval(refresh,1500);session.connect();
+
+window.addEventListener("message",event=>{if(event.origin===location.origin&&event.source===parent&&event.data?.type==="pause-for-game-menu"){q("#auto-npc").checked=false;scheduleNpc();}});
