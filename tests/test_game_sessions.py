@@ -65,3 +65,19 @@ class GameSessionTests(unittest.TestCase):
         self.assertEqual(games.adventure.ai.status()['requests_today'],used+1)
         self.act(games,'delete',room_id=self.room)
         self.assertEqual(games.adventure.ai.status()['requests_today'],used+1)
+    def test_found_item_survives_checkpoint_load_without_duplication(self):
+        games=self.games();room=self.act(games,'create',name='Находки',scenario='missing-book')['room_id']
+        state=games.adventure.read(room)
+        with self.store._connection() as c:
+            state['location']='store'
+            c.execute('UPDATE adventures SET body=? WHERE room_id=?',(json.dumps(state),room))
+        games.adventure.ai.client.complete=lambda *a:{'content':json.dumps({'narration':'Верёвка.','action':'take','destination':'','skill':'','objective':'rope'})}
+        state=games.adventure.execute(room,{'revision':state['revision'],'character_id':state['character_id'],'text':'Беру верёвку'},str(uuid4()))
+        self.act(games,'save',room_id=room)
+        roster=self.roster.read(room);actor=next(a for a in roster['characters'] if a['id']==state['character_id'])
+        self.assertEqual(len(actor['items']),1)
+        self.roster.execute(room,{'action':'remove_item','revision':roster['revision'],'character_id':actor['id'],'id':actor['items'][0]['id']},str(uuid4()))
+        self.act(games,'load',room_id=room);games.adventure.read(room)
+        actor=next(a for a in self.roster.read(room)['characters'] if a['id']==state['character_id'])
+        self.assertEqual(len(actor['items']),1)
+        self.assertEqual(actor['items'][0]['name'],'Верёвка из кладовой')

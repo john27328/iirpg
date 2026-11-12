@@ -99,3 +99,6 @@ immunity is a simulation choice, not a replacement for tracking exploration time
 Session encounter profiles (`session_stablehand`, `session_hostess`) are
 IIRPG-authored nonlethal prototype examples. Their numeric statistics and
 unarmed damage are scenario parameters, not reproduced published NPC blocks.
+
+`adventure_items.json` contains IIRPG-authored story props and illustrative
+inventory parameters, not copied official equipment stat blocks.

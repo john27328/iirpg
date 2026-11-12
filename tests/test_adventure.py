@@ -34,10 +34,14 @@ class AdventureTests(unittest.TestCase):
         self.assertFalse(result['book']);self.assertIn('pending_check',result);self.assertEqual(session.execute(self.room,command,key),result)
         result=self.roll_pending(session,result)
         self.assertTrue(result['book']);self.assertIn('check',result['history'][-1])
+        hero=next(a for a in self.roster.read(self.room)['characters'] if a['id']==self.actor)
+        self.assertEqual(sum(i['name']=='Дорожная книга' for i in hero['items']),1)
         decision.update(narration='Вы возвращаетесь.',action='move',destination='hall',skill='',objective='')
         command.update(revision=result['revision'],text='Возвращаюсь с книгой в зал');result=session.execute(self.room,command,str(uuid4()));self.assertFalse(result.get('completed',False))
         decision.update(action='return_book',destination='')
         command.update(revision=result['revision'],text='Возвращаю книгу хозяйке');result=session.execute(self.room,command,str(uuid4()));self.assertTrue(result['completed'])
+        hero=next(a for a in self.roster.read(self.room)['characters'] if a['id']==self.actor)
+        self.assertFalse(any(i['name']=='Дорожная книга' for i in hero['items']))
         self.assertEqual(AdventureStore(ai).read(self.room),result)
     def test_invalid_response_does_not_move_or_roll(self):
         client=GMClient();session=AdventureStore(AIService(self.combat,self.scene,load_config(),client))
@@ -168,3 +172,26 @@ class AdventureTests(unittest.TestCase):
             archived=json.loads(c.execute('SELECT body FROM session_training_archive WHERE room_id=? AND encounter_id=?',(self.room,old['id'])).fetchone()[0])
         self.assertEqual(archived,old)
         self.assertEqual(self.combat.read(self.room)['fighters'][1]['name'],'Хозяйка')
+    def test_take_rope_adds_one_real_item_and_prevents_double_pickup(self):
+        client=GMClient();session=AdventureStore(AIService(self.combat,self.scene,load_config(),client))
+        with self.store._connection() as c:c.execute('INSERT INTO adventures VALUES(?,?)',(self.room,json.dumps({'revision':0,'location':'store','book':False,'history':[],'character_id':None})))
+        client.complete=lambda *args:{'content':json.dumps({'narration':'Забираете верёвку.','action':'take','destination':'','skill':'','objective':'rope'})}
+        command={'revision':0,'character_id':self.actor,'text':'Беру верёвку в инвентарь'};key=str(uuid4())
+        state=session.execute(self.room,command,key)
+        self.assertEqual(session.execute(self.room,command,key),state)
+        hero=next(a for a in self.roster.read(self.room)['characters'] if a['id']==self.actor)
+        self.assertEqual(sum(i['name']=='Верёвка из кладовой' for i in hero['items']),1)
+        self.assertNotIn('верёвка',state['place']['description'])
+        with self.assertRaisesRegex(ValueError,'уже забран'):
+            session.execute(self.room,{**command,'revision':state['revision']},str(uuid4()))
+        self.assertEqual(len(next(a for a in self.roster.read(self.room)['characters'] if a['id']==self.actor)['items']),len(hero['items']))
+
+    def test_failed_book_check_does_not_add_inventory_item(self):
+        client=GMClient();session=AdventureStore(AIService(self.combat,self.scene,load_config(),client))
+        with self.store._connection() as c:c.execute('INSERT INTO adventures VALUES(?,?)',(self.room,json.dumps({'revision':0,'location':'store','book':False,'history':[],'character_id':self.actor})))
+        client.complete=lambda *args:{'content':json.dumps({'narration':'Поднимаете сундук.','action':'check','destination':'','skill':'athletics','objective':'book'})}
+        state=session.execute(self.room,{'revision':0,'character_id':self.actor,'text':'Достаю книгу из-под сундука'},str(uuid4()))
+        result=self.roll_pending(session,state,1)
+        self.assertFalse(result['book'])
+        hero=next(a for a in self.roster.read(self.room)['characters'] if a['id']==self.actor)
+        self.assertFalse(any(i['name']=='Дорожная книга' for i in hero['items']))

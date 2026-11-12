@@ -1,0 +1,4 @@
+{
+  "book": {"name":"Дорожная книга","category":"gear","bulk":"L","location":"store","requires_check":true,"notes":"Сюжетный предмет: дорожная книга хозяйки постоялого двора."},
+  "rope": {"name":"Верёвка из кладовой","category":"gear","bulk":"L","location":"store","requires_check":false,"notes":"Авторский предмет тестового сценария."}
+}
