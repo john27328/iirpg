@@ -103,6 +103,12 @@ unarmed damage are scenario parameters, not reproduced published NPC blocks.
 `adventure_items.json` contains IIRPG-authored story props and illustrative
 inventory parameters, not copied official equipment stat blocks.
 
+`adventure_support.json` and `adventure_support.py` adapt Aid (Player Core 2023,
+p. 416, https://2e.aonprd.com/Actions.aspx?ID=2292), using the stored rules in
+`data/pathfinder2e-remaster/rules/playing-the-game.md`. The NPC's trained
+Athletics modifier and the Diplomacy activity to enlist this particular helper
+are authored scenario parameters, not a full implementation of social encounters.
+
 `progression_pf2e.json`, `progression.py` and `magic.py` adapt Player Core
 (2023) class, general feat and spell mechanics. Checked November 13, 2026;
 individual sources and page references are recorded in
