@@ -1,3 +1,4 @@
+import {createChatClass} from "/chat.js";
 import {createRoomSession,createId} from '/room-session.js';
 const q=s=>document.querySelector(s);
 const developer=new URLSearchParams(location.search).get('developer')==='1';
@@ -20,9 +21,28 @@ const playerTurn=()=>battle?.status==='active'&&side(active(),battle.turn)==='pl
 const enemyTurn=()=>battle?.status==='active'&&!playerTurn();
 const canAct=()=>session.ready&&!busy&&!retry&&playerTurn();
 const session=createRoomSession(async()=>{
-  if(lastRoom!==session.room){lastRoom=session.room;selectedThread=null;q('#auto-npc').checked=false;clearTimeout(npcTimer);npcTimer=null;npcSteps=0;retry=null;chosenHeroes=new Set();battle=null;scene=null;roster=null;selectedPosition=null;selectedPreset=null;targetId='';objectId='';draftActor=null;q('#intent-text').value='';partyKey=mapKey=queueKey=journalKey=intentsKey='';q('#action-error').hidden=true;q('#battle-preparation').open=true;}
+  if(lastRoom!==session.room){lastRoom=session.room;selectedThread=null;q('#auto-npc').checked=false;clearTimeout(npcTimer);npcTimer=null;npcSteps=0;retry=null;chosenHeroes=new Set();battle=null;scene=null;roster=null;selectedPosition=null;selectedPreset=null;targetId='';objectId='';draftActor=null;battleChat.reset();partyKey=mapKey=queueKey=journalKey=intentsKey='';q('#action-error').hidden=true;q('#battle-preparation').open=true;}
   await refresh();
 });
+const Chat=createChatClass({context:()=>({room:session.room,generation:session.generation,ready:session.ready}),request:session.request,createRequestId:createId,diceCatalog:()=>null,setConnection:session.connection,roomFragment:()=>location.hash.slice(1),showBattle:()=>{},refreshChats:()=>refreshBattleChat()});
+const battleChat=new Chat('first','01','Обсудите замысел с ведущим; цель выбирается на карте.',{
+  id:'battle',container:'#battle-chat',title:'Чат с ведущим',enabled:()=>session.ready&&playerTurn(),sendEnabled:()=>canAct()&&(!draftActor||draftActor===actorId()),
+  send:async(text,retry)=>{
+    if(!retry.battleOperation){
+      const objectCommand=/^(укры|занять укрытие|опрокин)/i.test(text.trim()),thread=q('#intent-thread').value;
+      retry.battleOperation={path:`/api/rooms/${session.room}/combat`,body:JSON.stringify({action:thread?'clarify_intent':'intent',revision:battle.revision,actor_id:actorId(),text,...(thread?{intent_id:thread}:{review:true}),...(objectId||targetId?{target_id:objectCommand?objectId:targetId}:{}),...(selectedPosition?{position:selectedPosition}:{})}),id:retry.request_id,epoch:session.generation,room:session.room,clearIntent:true,...(thread?{clarifiedId:thread}:{intentIds:(battle.intents||[]).map(i=>i.id)})};
+    }
+    await submitOperation(retry.battleOperation);
+    if(!q('#action-error').hidden)throw new Error(q('#action-error').textContent);
+  },refresh:()=>refreshBattleChat()
+});
+battleChat.input.id='intent-text';battleChat.input.maxLength=1000;battleChat.input.placeholder='Опишите действие или задайте вопрос ведущему…';
+battleChat.element.querySelector('label.sr-only').htmlFor='intent-text';battleChat.element.querySelector('form').id='battle-intent';
+async function refreshBattleChat(){
+  if(!session.ready)return;
+  const epoch=session.generation,page=await battleChat.read(session.room);
+  if(epoch===session.generation)battleChat.applyPage(page);
+}
 const actionNames={start:'Начало боя',strike:'Удар',cast_spell:'Заклинание',move:'Перемещение',shield:'Щит',take_cover:'Укрытие',tip_over:'Объект',end_turn:'Конец хода',communicate:'Переговоры',surrender:'Сдача',intent:'Намерение',clarify_intent:'Уточнение',offer_intent:'Предложение ИИ',demoralize:'Деморализация',reject_intent:'Решение ведущего',wait:'Ожидание'};
 function showError(message){q('#action-error').textContent=message;q('#action-error').hidden=!message;}
 function options(select,entries,desired){
@@ -158,10 +178,6 @@ function renderIntents(){
     const card=node('article',`intent-card ${i.status}`);card.dataset.intentId=i.id;
     card.append(node('span','',`${i.actor_name} · раунд ${i.round}`),node('p','',i.text),node('span','',i.status==='pending'?'Ожидает решения · действия не потрачены':i.status==='rejected'?'Отклонено':'Исполнено: '+(actionNames[i.effect]||i.effect)));
     const history=i.messages||[{role:'user',text:i.text}];
-    if(history.length>1){const dialogue=node('div','intent-dialogue');
-      for(const m of history.slice(1))dialogue.append(node('p',m.role==='user'?'dialogue-user':'dialogue-gm',`${m.role==='user'?'Вы':'Ведущий'}: ${m.text}`));
-      card.append(dialogue);
-    }
     const proposal=i.analysis;
     if(proposal){
       if(history.at(-1)?.role!=='assistant')card.append(node('p','intent-analysis',proposal.summary));
@@ -230,7 +246,7 @@ function renderActionMenu(){
 }
 function renderControls(){
   renderPreparation();const f=active();const allowed=canAct();
-  q('#hero-actions').disabled=!allowed;
+  q('#hero-actions').disabled=!session.ready||!playerTurn();
   q('#hero-actions').hidden=!playerTurn();q('#npc-actions').hidden=!enemyTurn();
   if(battle?.mapped){
     const here=(battle.fighters||[]).map((f,i)=>({...f,index:i})).filter(f=>living(f)&&f.position?.[0]===selectedPosition?.[0]&&f.position?.[1]===selectedPosition?.[1]);
@@ -242,8 +258,8 @@ function renderControls(){
   }
   q('#fallback-target').hidden=!!battle?.mapped||!playerTurn();
   renderActionMenu();
-  q('#intent-text').disabled=!allowed;q('#intent-thread').disabled=!allowed;
-  q('#battle-intent button').disabled=!allowed||!!draftActor&&draftActor!==actorId();
+  q('#intent-text').disabled=!session.ready||!playerTurn();q('#intent-thread').disabled=!allowed;
+  battleChat.update();
   q('#resolve-action').disabled=!allowed||!q('#resolve-intent').value||!q('#resolve-effect').value;
   q('#resolve-intent').disabled=!allowed;q('#resolve-effect').disabled=!allowed;
   const turnNpc=enemyTurn()&&!busy&&!retry&&session.ready;
@@ -254,7 +270,7 @@ function renderControls(){
   q('#retry-action').hidden=!retry;q('#retry-action').disabled=busy;
   if(draftActor&&draftActor!==actorId()&&q('#intent-text').value){const name=battle?.fighters?.find(f=>f.entity_id===draftActor)?.name||'предыдущего героя';q('#draft-owner').textContent=`Черновик для ${name}. Дождитесь его хода или очистите поле.`;}else q('#draft-owner').textContent='';
 }
-function render(){q('#back-to-story').hidden=!battle?.session_link;renderActive();renderQueue();renderIntents();renderControls();renderMap();renderJournal();scheduleNpc();}
+function render(){q('#back-to-story').hidden=!battle?.session_link;renderActive();renderQueue();renderIntents();renderControls();renderMap();renderJournal();scheduleNpc();battleChat.update();}
 async function refresh(){
   if(!session.ready||busy||(refreshing&&refreshEpoch===session.generation))return;const epoch=session.generation,room=session.room;refreshing=true;refreshEpoch=epoch;
   try{const [b,s,r,a,g,templates]=await Promise.all([session.request(`/api/rooms/${room}/combat`),session.request(`/api/rooms/${room}/scene`),session.request(`/api/rooms/${room}/roster`),session.request('/api/ai'),session.request('/api/combat/groups'),session.request('/api/combat/presets')]);
@@ -272,7 +288,7 @@ async function submitOperation(operation){
     if(operation.epoch!==session.generation||operation.room!==session.room)return;
     retry=null;
     if(operation.createdHero&&result.entity_id)chosenHeroes.add(result.entity_id);
-    if(operation.clearIntent){q('#intent-text').value='';draftActor=null;}
+    if(operation.clearIntent&&!q('#intent-text').value)draftActor=null;
     if(result.combat)battle=result.combat;else if(result.fighters)battle=result;
     if(operation.start){q('#battle-preparation').open=false;q('#auto-npc').checked=true;npcSteps=0;}
     if(battle?.status==='finished')q('#battle-preparation').open=true;
@@ -322,9 +338,6 @@ q('#clear-selection').addEventListener('click',()=>{selectedPosition=null;target
 document.querySelectorAll('[data-command]').forEach(button=>button.addEventListener('click',()=>send(button.dataset.command,parameters(button.dataset.command))));
 const draftLabel=node('p','input-help');draftLabel.id='draft-owner';q('#intent-text').after(draftLabel);
 q('#intent-text').addEventListener('input',()=>{draftActor=q('#intent-text').value?(draftActor||actorId()):null;renderControls();});
-q('#battle-intent').addEventListener('submit',e=>{e.preventDefault();if(!canAct()||draftActor&&draftActor!==actorId())return;const text=q('#intent-text').value;if(!text.trim())return;
-  const objectCommand=/^(укры|занять укрытие|опрокин)/i.test(text.trim());const thread=q('#intent-thread').value;send(thread?'clarify_intent':'intent',{text,...(thread?{intent_id:thread}:{review:true}),...(objectId||targetId?{target_id:objectCommand?objectId:targetId}:{}),...(selectedPosition?{position:selectedPosition}:{})},true);
-});
 q('#resolve-action').addEventListener('click',()=>{const effect=q('#resolve-effect').value;send('resolve_intent',{intent_id:q('#resolve-intent').value,effect,...parameters(effect)});});
 q('#ai-step').addEventListener('click',()=>{
   if(!enemyTurn()||busy||retry)return;if(battle.actions===0){send('end_turn');return;}
@@ -334,6 +347,6 @@ q('#retry-action').addEventListener('click',()=>{if(retry)submitOperation(retry)
 q('#zoom-in').addEventListener('click',()=>{cellSize=Math.min(68,cellSize+6);renderMap();});q('#zoom-out').addEventListener('click',()=>{cellSize=Math.max(26,cellSize-6);renderMap();});
 q('#resolve-intent').addEventListener('change',renderControls);
 q('#intent-thread').addEventListener('change',()=>{selectedThread=q('#intent-thread').value;q('#intent-text').placeholder=q('#intent-thread').value?'Уточните замысел или задайте вопрос ведущему…':'Опишите новое действие…';});
-setInterval(refresh,1500);session.connect();
+setInterval(()=>{refresh();refreshBattleChat().catch(()=>{});},1500);session.connect();
 
 window.addEventListener("message",event=>{if(event.origin===location.origin&&event.source===parent&&event.data?.type==="pause-for-game-menu"){q("#auto-npc").checked=false;scheduleNpc();}});

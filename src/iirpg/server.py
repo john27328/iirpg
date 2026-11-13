@@ -42,6 +42,8 @@ STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/debug": ("debug.html", "text/html; charset=utf-8"),
     "/debug/": ("debug.html", "text/html; charset=utf-8"),
+    "/hero-menu.js": ("hero-menu.js", "text/javascript; charset=utf-8"),
+    "/chat.js": ("chat.js", "text/javascript; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/inventory.js": ("inventory.js", "text/javascript; charset=utf-8"),
@@ -162,6 +164,13 @@ class ChatHandler(BaseHTTPRequestHandler):
         if route.path == '/api/games':
             if method == 'GET':self._json(200,self.server.games.list());return
             if method == 'POST':self._json(200,self.server.games.execute(self._body(),self.headers.get('Idempotency-Key','')));return
+        if route.path == '/api/characters':
+            if method == 'GET':self._json(200,self.server.games.heroes.list());return
+            if method == 'POST':self._json(200,self.server.games.heroes.execute(self._body(),self.headers.get('Idempotency-Key','')));return
+        creator_match = re.fullmatch(r'/api/characters/drafts/([0-9a-f-]{36})',route.path)
+        if creator_match:
+            if method == 'GET':self._json(200,self.server.games.heroes.read(creator_match.group(1)));return
+            if method == 'POST':self._json(200,self.server.games.heroes.respond(creator_match.group(1),self._body(),self.headers.get('Idempotency-Key','')));return
         if method == "POST" and route.path == "/api/rooms":
             self._body()
             self._json(201, {"room_id": self.server.service.store.create_room()})

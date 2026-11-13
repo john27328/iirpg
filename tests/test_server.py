@@ -45,10 +45,25 @@ class ServerTests(unittest.TestCase):
         with response:
             return response.status, response.read()
 
+    def test_character_library_draft_and_game_routes(self) -> None:
+        status,body=self.request('/api/characters')
+        self.assertEqual(status,200)
+        heroes=json.loads(body)['heroes'];self.assertGreaterEqual(len(heroes),3)
+        headers={'Idempotency-Key':str(uuid4())}
+        status,body=self.request('/api/characters',{'action':'new_draft'},headers)
+        self.assertEqual(status,200);draft=json.loads(body)['draft_id']
+        self.assertEqual(self.request('/api/characters',{'action':'new_draft'},headers)[1],body)
+        self.assertEqual(self.request('/api/characters/drafts/'+draft)[0],200)
+        self.assertEqual(self.request('/api/rooms/'+draft+'/messages?chat=first')[0],200)
+        status,body=self.request('/api/games',{'action':'create','name':'Выбранный герой','scenario':'missing-book','hero_id':heroes[2]['id']},{'Idempotency-Key':str(uuid4())})
+        self.assertEqual(status,200);room=json.loads(body)['room_id']
+        _,body=self.request('/api/rooms/'+room+'/roster')
+        self.assertEqual(json.loads(body)['characters'][0]['name'],heroes[2]['name'])
+
     def test_page_and_static_assets_are_served(self) -> None:
         for path, marker in [("/", "Ваша история."), ("/debug", "Внутренние сущности"),
                              ("/debug/", "ИНСПЕКТОР КОМНАТЫ"), ("/debug.js", "class DebugPanel"),
-                             ("/app.js", "class Chat"), ("/styles.css", ".chats")]:
+                             ("/app.js", "createChatClass"), ("/chat.js", "class Chat"), ("/hero-menu.js", "class HeroMenu"), ("/styles.css", ".chats")]:
             status, body = self.request(path)
             self.assertEqual(status, 200)
             self.assertIn(marker, body.decode())
@@ -112,7 +127,8 @@ class ServerTests(unittest.TestCase):
         game = self.request("/")[1].decode()
         debug = self.request("/debug")[1].decode()
         self.assertIn('data-view="game"', game)
-        self.assertIn('id="chat-template"', game)
+        self.assertIn('id="chats"', game)
+        self.assertIn('/chat.js', self.request('/app.js')[1].decode())
         self.assertIn('id="inventory"', game)
         self.assertIn('id="combat-frame"', game)
         self.assertIn('id="show-battle"', game)
@@ -474,6 +490,8 @@ class AccessTests(unittest.TestCase):
                 self.assertEqual(request("/api/tools/dice")[0], 401)
                 self.assertEqual(request("/api/gm/commands")[0], 401)
                 self.assertEqual(request('/api/ai')[0], 401)
+                self.assertEqual(request('/api/characters')[0], 401)
+                self.assertEqual(request('/api/characters',payload={'action':'new_draft'})[0], 401)
                 self.assertEqual(request("/api/tools/dice", token)[0], 200)
                 status, created = request("/api/rooms", token, {})
                 self.assertEqual(status, 201)

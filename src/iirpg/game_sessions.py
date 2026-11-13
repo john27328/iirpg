@@ -4,8 +4,9 @@ import time
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 from .storage import MessageConflict
-from .roster import apply_command, InventoryRules
+from .roster import InventoryRules
 from .character_sheet import CharacterRules
+from .hero_library import HeroLibrary
 
 SCENARIOS = [{'id':'missing-book','name':'Пропавшая дорожная книга','description':'Тестовое приключение: постоялый двор, разговоры, проверки и возможная драка.'}]
 EXCLUDED = {'game_sessions','game_checkpoints','game_operations','ai_requests'}
@@ -13,6 +14,7 @@ EXCLUDED = {'game_sessions','game_checkpoints','game_operations','ai_requests'}
 class GameSessions:
     def __init__(self, adventure):
         self.adventure=adventure;self.store=adventure.store
+        self.heroes=HeroLibrary(adventure.ai)
         with self.store._connection() as c:
             c.executescript('CREATE TABLE IF NOT EXISTS game_sessions(room_id TEXT PRIMARY KEY REFERENCES rooms(id),name TEXT NOT NULL,scenario TEXT NOT NULL,saved_at TEXT); CREATE TABLE IF NOT EXISTS game_checkpoints(room_id TEXT PRIMARY KEY REFERENCES rooms(id),body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS game_operations(id TEXT PRIMARY KEY,command TEXT NOT NULL,response TEXT NOT NULL);')
 
@@ -44,7 +46,7 @@ class GameSessions:
     def execute(self,command,key):
         try:UUID(key)
         except (ValueError,TypeError,AttributeError):raise ValueError('Нужен UUID операции.') from None
-        if set(command)-{'action','room_id','name','scenario'}:raise ValueError('Неизвестные поля сеанса.')
+        if set(command)-{'action','room_id','name','scenario','hero_id'}:raise ValueError('Неизвестные поля сеанса.')
         encoded=json.dumps(command,sort_keys=True)
         with self.store._connection() as c:
             c.execute('BEGIN IMMEDIATE')
@@ -57,12 +59,20 @@ class GameSessions:
                 if command.get('scenario')!='missing-book':raise ValueError('Выберите доступный сценарий.')
                 title=command.get('name','Новая игра')
                 if not isinstance(title,str) or not title.strip() or len(title)>100:raise ValueError('Название: от 1 до 100 символов.')
+                hero_id=command.get('hero_id')
+                if 'hero_id' in command and not isinstance(hero_id,str):raise ValueError('Выберите готового героя.')
+                template=c.execute('SELECT body FROM hero_templates WHERE id=?',(hero_id,)).fetchone() if hero_id is not None else c.execute('SELECT body FROM hero_templates ORDER BY rowid LIMIT 1').fetchone()
+                if not template:raise ValueError('Выберите готового героя или создайте нового с помощником.')
+                prepared=json.loads(template['body'])
                 room=str(uuid4());c.execute('INSERT INTO rooms(id) VALUES(?)',(room,))
                 c.execute('INSERT INTO game_sessions VALUES(?,?,?,NULL)',(room,title.strip(),'missing-book'))
                 roster=self.adventure.ai.combat.roster._load(c,room)
-                actor=apply_command(roster,{'action':'create_character','data':{'name':'Искатель','attributes':{'strength':4,'dexterity':2,'constitution':2,'wisdom':1,'charisma':1},'sheet':{'values':{'hp_max':20,'hp_current':20,'armor_rank':'trained','armor_item_bonus':2}}}},InventoryRules(roster['rules']),CharacterRules(roster['character_rules']))
-                character=roster['characters'][0];body={k:v for k,v in character.items() if k not in ('id','items')}
+                rules=InventoryRules(roster['rules'])
+                character=rules.character({k:v for k,v in prepared.items() if k!='items'},[],CharacterRules(roster['character_rules']))
+                actor=str(uuid4());body=character
                 c.execute('INSERT INTO characters VALUES(?,?,?,?)',(actor,room,None,json.dumps(body,ensure_ascii=False)))
+                for item in prepared.get('items',[]):
+                    c.execute('INSERT INTO inventory_items VALUES(?,?,?,?)',(str(uuid4()),room,actor,json.dumps(rules.item(item),ensure_ascii=False)))
                 c.execute('UPDATE room_rosters SET revision=1 WHERE room_id=?',(room,))
                 state={'revision':1,'location':'hall','book':False,'character_id':actor,'history':[{'player':'','gm':'Вы входите в постоялый двор. Хозяйка просит помочь найти пропавшую дорожную книгу. У лестницы видны грязные следы. Из зала можно пройти в кладовую или во двор. Что вы делаете?','action':'start'}]}
                 c.execute('INSERT INTO adventures VALUES(?,?)',(room,json.dumps(state,ensure_ascii=False)));self.adventure.publish(c,room,state)

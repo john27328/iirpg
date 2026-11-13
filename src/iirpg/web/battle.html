@@ -39,8 +39,11 @@
             <section class="action-section" aria-labelledby="general-actions-title"><h3 id="general-actions-title">Без указания цели</h3><div id="general-actions" class="action-grid"></div></section>
             <label id="fallback-target" hidden>Цель · бой без карты<select id="battle-target"></select></label>
             <section class="action-section" aria-labelledby="cell-actions-title"><div class="cell-actions-heading"><h3 id="cell-actions-title">Выбранная клетка</h3><button id="clear-selection" type="button" hidden>Снять выбор</button></div><p id="cell-actions-note" class="input-help">Выберите клетку на карте.</p><div id="cell-actions" class="action-grid"></div></section>
-            <form id="battle-intent"><label for="intent-thread">Обсуждение</label><select id="intent-thread"><option value="">Новое действие</option></select><label for="intent-text">Ваше действие</label><textarea id="intent-text" maxlength="1000" rows="3" placeholder="Поднять щит, идти 3,4 или описать свой замысел…" required></textarea><button type="submit">Выполнить / предложить</button><p class="input-help">Кнопки выполняются после проверки ИИ без дополнительного подтверждения. Текстовые замыслы можно обсуждать и подтверждать отдельно.</p></form>
           </fieldset>
+            <label for="intent-thread">Обсуждение действия</label><select id="intent-thread"><option value="">Новое действие</option></select>
+            <div id="battle-chat" class="chats game-chat"></div>
+            <p class="input-help">Кнопки действий выполняются после проверки ИИ. Замысел можно обсудить в чате и подтвердить предложенное действие.</p>
+
           <section id="npc-actions" hidden><p>Сейчас действует противник. Автоматические ходы можно поставить на паузу.</p><button id="ai-step" type="button">Одно действие ИИ</button><button data-command="enemy_turn" type="button" class="subtle-action">Весь ход · обычная тактика</button><p id="ai-status" class="input-help" hidden></p><a href="/debug" class="page-link input-help" hidden>Контекст и решения ИИ ↗</a></section>
           <button id="retry-action" type="button" hidden>Проверить результат запроса</button>
         </aside>

@@ -15,3 +15,5 @@
 #session-text{display:block;width:100%;margin:10px 0;padding:12px}#session-history{max-height:60vh;overflow:auto}#session-hero{max-width:100%;margin:12px 0}
 
 .embedded-combat .topbar,.embedded-combat .battle-heading>button{display:none}.embedded-combat .battle-workspace{max-width:none;padding:0 12px 20px}.embedded-combat .battle-heading{padding-top:16px}
+
+#battle-chat{display:block;margin-top:12px}#battle-chat .chat{min-width:0;width:100%;height:auto;min-height:400px}#battle-chat .message-list{height:320px;min-height:200px;max-height:55vh}#battle-chat .chat-header{padding:15px}#battle-chat .composer{padding:12px}#battle-chat textarea{min-height:80px}.battle-workspace .message .reply-choice{width:auto}
