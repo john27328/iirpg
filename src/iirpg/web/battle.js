@@ -23,7 +23,7 @@ const session=createRoomSession(async()=>{
   if(lastRoom!==session.room){lastRoom=session.room;selectedThread=null;q('#auto-npc').checked=false;clearTimeout(npcTimer);npcTimer=null;npcSteps=0;retry=null;chosenHeroes=new Set();battle=null;scene=null;roster=null;selectedPosition=null;selectedPreset=null;targetId='';objectId='';draftActor=null;q('#intent-text').value='';partyKey=mapKey=queueKey=journalKey=intentsKey='';q('#action-error').hidden=true;q('#battle-preparation').open=true;}
   await refresh();
 });
-const actionNames={start:'Начало боя',strike:'Удар',move:'Перемещение',shield:'Щит',take_cover:'Укрытие',tip_over:'Объект',end_turn:'Конец хода',communicate:'Переговоры',surrender:'Сдача',intent:'Намерение',clarify_intent:'Уточнение',offer_intent:'Предложение ИИ',demoralize:'Деморализация',reject_intent:'Решение ведущего',wait:'Ожидание'};
+const actionNames={start:'Начало боя',strike:'Удар',cast_spell:'Заклинание',move:'Перемещение',shield:'Щит',take_cover:'Укрытие',tip_over:'Объект',end_turn:'Конец хода',communicate:'Переговоры',surrender:'Сдача',intent:'Намерение',clarify_intent:'Уточнение',offer_intent:'Предложение ИИ',demoralize:'Деморализация',reject_intent:'Решение ведущего',wait:'Ожидание'};
 function showError(message){q('#action-error').textContent=message;q('#action-error').hidden=!message;}
 function options(select,entries,desired){
   const fingerprint=JSON.stringify(entries);
@@ -285,10 +285,10 @@ async function submitOperation(operation){
 function send(action,extra={},clearIntent=false){
   if(busy||retry||!session.ready||!battle)return;
   let buttonAction=false;
-  const reviewActions=['strike','move','shield','take_cover','tip_over','demoralize','end_turn'];
+  const reviewActions=['strike','move','shield','take_cover','tip_over','demoralize','end_turn','cast_spell'];
   if(playerTurn()&&reviewActions.includes(action)){
     buttonAction=true;
-    const requested={action,...extra},name=actionNames[action]||action;
+    const requested={action,...extra},name=action==='cast_spell'?(roster?.build_rules?.spells?.[extra.spell_id]?.name||'Заклинание')+' · '+extra.spell_actions+' действия':actionNames[action]||action;
     const target=battle.fighters.find(f=>f.entity_id===extra.target_id);
     extra={text:name+(target?' · '+target.name:'')+(extra.position?' ['+extra.position.join(',')+']':''),review:true,requested_action:requested,
       ...(extra.target_id?{target_id:extra.target_id}:{}),...(extra.position?{position:extra.position}:selectedPosition?{position:selectedPosition}:{})};

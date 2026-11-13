@@ -150,7 +150,7 @@ class InventoryRules:
         return {**(sheet_rules.config["attributes"] if sheet_rules else {}), **self.config["attributes"]}
 
     def character(self, payload: dict, players: list[dict], sheet_rules: CharacterRules | None = None) -> dict:
-        fields(payload, {"name", "kind", "player_id", "size", "attributes", "coins", "notes", "sheet"})
+        fields(payload, {"name", "kind", "player_id", "size", "attributes", "coins", "notes", "sheet", "build"})
         kind = member(payload.get("kind", "pc"), {"pc": 1, "npc": 1}, "Тип персонажа")
         player_id = payload.get("player_id")
         if player_id is not None:
@@ -178,6 +178,9 @@ class InventoryRules:
             sheet_rules.statistics(result["sheet"], attributes)
         elif "sheet" in payload:
             raise ValueError("Не подключены правила листа персонажа.")
+        if 'build' in payload:
+            from .progression import normalize_build
+            result['build'] = normalize_build(payload['build'])
         return result
 
     def summary(self, character: dict) -> dict:
@@ -226,6 +229,8 @@ def apply_command(state: dict, command: dict, rules: InventoryRules,
     data = command.get("data", {})
     if not isinstance(data, dict):
         raise ValueError("data должен быть объектом.")
+    if 'build' in data:
+        raise ValueError('Сборку меняйте отдельной командой configure_build.')
     if action in ("delete_player", "delete_character", "remove_item"):
         fields(data, set())
     result_id = command.get("id")
@@ -264,6 +269,12 @@ def apply_command(state: dict, command: dict, rules: InventoryRules,
                 data = {**data, "sheet": sheet_rules.update(character["sheet"], data["sheet"],
                                                            data.get("kind", character["kind"]))}
             character.update(rules.character({**original, **data}, state["players"], sheet_rules))
+    elif action == 'configure_build':
+        from .progression import configure
+        character = find(state['characters'], result_id)
+        if not sheet_rules:
+            raise ValueError('Не подключены правила персонажей.')
+        configure(character, data, sheet_rules)
     elif action in ("add_item", "update_item", "remove_item"):
         character = find(state["characters"], command.get("character_id"))
         if action == "add_item":

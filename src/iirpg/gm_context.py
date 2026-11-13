@@ -33,7 +33,7 @@ GM_PROMPT = (
 
 
 def matches_requested_action(requested: dict, command: dict) -> bool:
-    offered = {'action': command.get('effect'), **{k:command[k] for k in ('target_id','position','delivery') if k in command}}
+    offered = {'action': command.get('effect'), **{k:command[k] for k in ('target_id','position','delivery','spell_id','spell_actions') if k in command}}
     requested = deepcopy(requested)
     for value in (requested, offered):
         if value.get('action') == 'demoralize':value.setdefault('delivery', 'speech')
@@ -104,7 +104,7 @@ def intent_options(state: dict, scene: dict, roster: dict, intent: dict, selecte
 def describe_proposal(state: dict, scene: dict, roster: dict, command: dict) -> dict:
     effect = command['effect']
     description = {'effect': effect, 'summary': command.get('summary', ''),
-                   'command': {key:command[key] for key in ('target_id','position','delivery') if key in command}}
+                   'command': {key:command[key] for key in ('target_id','position','delivery','spell_id','spell_actions') if key in command}}
     if effect in ('manual', 'need_target'):
         return {**description, 'cost': 0}
     if effect == 'demoralize':

@@ -49,7 +49,8 @@ export class InventoryPanel {
     this.characterForm = $(".character-form", root);
     this.itemForm = $(".item-form", root);
     this.sheetWindow = new CharacterSheetWindow($(".sheet-dialog", root), () => this.state,
-      (id, data) => this.mutate("update_character", data, { id }), () => this.update());
+      (id, data) => this.mutate("update_character", data, { id }), () => this.update(),
+      (id, data) => this.mutate("configure_build", data, { id }));
     root.querySelectorAll(".close-dialog").forEach((element) => element.addEventListener("click", () => element.closest("dialog").close()));
     for (const [key, label] of [["all", "Все"], ["pc", "Игроки"], ["npc", "NPC"]]) {
       const control = button(label, () => { this.filter = key; this.renderList(); }, "roster-filter");

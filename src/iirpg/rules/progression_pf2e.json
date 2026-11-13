@@ -1,0 +1,226 @@
+{
+  "id": "pf2e-remaster-starter",
+  "schema_version": 1,
+  "license": "ORC",
+  "notice": "character-ORC-NOTICE.md",
+  "description": "Стартовые сборки первого уровня; человек с универсальным наследием даёт один общий перк. Это ограниченный набор механик, а не полный генератор персонажа.",
+  "heritage_source": "https://2e.aonprd.com/Heritages.aspx?ID=262",
+  "classes": {
+    "fighter": {
+      "name": "Воин",
+      "hp": 10,
+      "description": "Эксперт с мечом; эксперт Восприятия, Стойкости и Рефлекса. Остальные классовые реакции и классовые перки пока не автоматизированы.",
+      "source_url": "https://2e.aonprd.com/Classes.aspx?ID=35",
+      "attributes": {
+        "strength": 4,
+        "dexterity": 2,
+        "constitution": 2,
+        "intelligence": 0,
+        "wisdom": 1,
+        "charisma": 0
+      },
+      "attack_attribute": "strength",
+      "weapon_proficiency": 4,
+      "combat": {
+        "damage_die": 8,
+        "weapon": "мечом",
+        "has_shield": true
+      },
+      "sheet": {
+        "armor_rank": "trained",
+        "class_dc_rank": "trained",
+        "perception_rank": "expert",
+        "fortitude_rank": "expert",
+        "reflex_rank": "expert",
+        "will_rank": "trained",
+        "armor_item_bonus": 2,
+        "armor_dex_cap": 3,
+        "key_attribute": "strength",
+        "athletics_rank": "trained",
+        "intimidation_rank": "trained",
+        "survival_rank": "trained",
+        "medicine_rank": "trained",
+        "acrobatics_rank": "untrained",
+        "arcana_rank": "untrained",
+        "crafting_rank": "untrained",
+        "deception_rank": "untrained",
+        "diplomacy_rank": "untrained",
+        "lore_rank": "untrained",
+        "nature_rank": "untrained",
+        "occultism_rank": "untrained",
+        "performance_rank": "untrained",
+        "religion_rank": "untrained",
+        "society_rank": "untrained",
+        "stealth_rank": "untrained",
+        "thievery_rank": "untrained"
+      }
+    },
+    "rogue": {
+      "name": "Плут",
+      "hp": 8,
+      "description": "Кинжал: Ловкость на атаку, agile (MAP −4/−8). Скрытая атака +1d6 при окружении союзником с противоположной стороны. Подклассы и прочие источники off-guard пока не автоматизированы.",
+      "source_url": "https://2e.aonprd.com/Classes.aspx?ID=37",
+      "attributes": {
+        "strength": 1,
+        "dexterity": 4,
+        "constitution": 2,
+        "intelligence": 0,
+        "wisdom": 1,
+        "charisma": 1
+      },
+      "attack_attribute": "dexterity",
+      "weapon_proficiency": 2,
+      "combat": {
+        "damage_die": 4,
+        "weapon": "кинжалом",
+        "has_shield": false,
+        "agile": true,
+        "sneak_attack": true
+      },
+      "sheet": {
+        "armor_rank": "trained",
+        "class_dc_rank": "trained",
+        "perception_rank": "expert",
+        "fortitude_rank": "trained",
+        "reflex_rank": "expert",
+        "will_rank": "expert",
+        "armor_item_bonus": 1,
+        "armor_dex_cap": 4,
+        "key_attribute": "dexterity",
+        "acrobatics_rank": "trained",
+        "stealth_rank": "trained",
+        "thievery_rank": "trained",
+        "deception_rank": "trained",
+        "diplomacy_rank": "trained",
+        "society_rank": "trained",
+        "athletics_rank": "trained",
+        "intimidation_rank": "trained",
+        "survival_rank": "trained",
+        "arcana_rank": "untrained",
+        "crafting_rank": "untrained",
+        "lore_rank": "untrained",
+        "medicine_rank": "untrained",
+        "nature_rank": "untrained",
+        "occultism_rank": "untrained",
+        "performance_rank": "untrained",
+        "religion_rank": "untrained"
+      }
+    },
+    "wizard": {
+      "name": "Маг",
+      "hp": 6,
+      "description": "Арканная магия: 2 подготовленных Force Barrage первого ранга; Daze, Light и Detect Magic без расхода ячеек. Школы, тезисы, фокусные заклинания и связанный предмет пока не автоматизированы.",
+      "source_url": "https://2e.aonprd.com/Classes.aspx?ID=39",
+      "attributes": {
+        "strength": 0,
+        "dexterity": 2,
+        "constitution": 2,
+        "intelligence": 4,
+        "wisdom": 1,
+        "charisma": 0
+      },
+      "attack_attribute": "strength",
+      "weapon_proficiency": 2,
+      "combat": {
+        "damage_die": 4,
+        "weapon": "кинжалом",
+        "has_shield": false
+      },
+      "slots": 2,
+      "spells": [
+        "force_barrage",
+        "daze",
+        "light",
+        "detect_magic"
+      ],
+      "sheet": {
+        "armor_rank": "trained",
+        "class_dc_rank": "trained",
+        "perception_rank": "trained",
+        "fortitude_rank": "trained",
+        "reflex_rank": "trained",
+        "will_rank": "expert",
+        "armor_item_bonus": 0,
+        "armor_dex_cap": 20,
+        "key_attribute": "intelligence",
+        "arcana_rank": "trained",
+        "crafting_rank": "trained",
+        "society_rank": "trained",
+        "occultism_rank": "trained",
+        "religion_rank": "trained",
+        "nature_rank": "trained",
+        "medicine_rank": "trained",
+        "acrobatics_rank": "untrained",
+        "athletics_rank": "untrained",
+        "deception_rank": "untrained",
+        "diplomacy_rank": "untrained",
+        "intimidation_rank": "untrained",
+        "lore_rank": "untrained",
+        "performance_rank": "untrained",
+        "stealth_rank": "untrained",
+        "survival_rank": "untrained",
+        "thievery_rank": "untrained"
+      }
+    }
+  },
+  "feats": {
+    "fleet": {
+      "name": "Быстроногий · Fleet",
+      "description": "Скорость +5 футов.",
+      "speed": 5,
+      "source_url": "https://2e.aonprd.com/Feats.aspx?ID=5150"
+    },
+    "incredible_initiative": {
+      "name": "Невероятная инициатива",
+      "description": "Ситуационный бонус +2 к инициативе.",
+      "initiative": 2,
+      "source_url": "https://2e.aonprd.com/Feats.aspx?ID=5160"
+    }
+  },
+  "spells": {
+    "force_barrage": {
+      "name": "Силовой залп · Force Barrage",
+      "rank": 1,
+      "costs": [
+        1,
+        2,
+        3
+      ],
+      "range_feet": 120,
+      "effect": "force_barrage",
+      "description": "Каждое потраченное действие: один автоматически попадающий снаряд 1d4+1 силового урона. Пока все снаряды направляются в одну цель.",
+      "source_url": "https://2e.aonprd.com/Spells.aspx?ID=1536"
+    },
+    "daze": {
+      "name": "Ошеломление · Daze",
+      "rank": 0,
+      "costs": [
+        2
+      ],
+      "range_feet": 60,
+      "effect": "daze",
+      "description": "1d6 ментального урона, базовый спасбросок Воли. Критический провал: stunned 1.",
+      "source_url": "https://2e.aonprd.com/Spells.aspx?ID=1482"
+    },
+    "light": {
+      "name": "Свет · Light",
+      "rank": 0,
+      "costs": [
+        2
+      ],
+      "effect": "light",
+      "description": "Один шар у героя: яркий свет 20 футов, тусклый ещё 20; до следующей дневной подготовки.",
+      "source_url": "https://2e.aonprd.com/Spells.aspx?ID=1585"
+    },
+    "detect_magic": {
+      "name": "Обнаружение магии · Detect Magic",
+      "rank": 0,
+      "costs": [
+        2
+      ],
+      "effect": "detect_magic",
+      "description": "Наличие либо отсутствие неизвестной магии в пределах 30 футов; не раскрывает источник или свойства.",
+      "source_url": "https://2e.aonprd.com/Spells.aspx?ID=1485"
+    }
+  }
+}

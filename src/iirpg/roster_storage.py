@@ -7,6 +7,7 @@ from uuid import UUID
 from .character_sheet import CharacterRules
 from .roster import InventoryRules, apply_command, integer
 from .storage import ChatStore, MessageConflict
+from .progression import RULES as BUILD_RULES, describe
 
 
 def encode(value: object, *, sort_keys: bool = True) -> str:
@@ -90,6 +91,7 @@ class RosterStore:
             by_id[row["character_id"]]["items"].append({**json.loads(row["body"]), "id": row["id"]})
         return {"revision": roster["revision"], "rules": json.loads(roster["rules"]),
                 "character_rules": sheet_rules.config,
+                "build_rules": BUILD_RULES,
                 "players": players, "characters": characters}
 
     def read(self, room_id: str) -> dict:
@@ -102,6 +104,7 @@ class RosterStore:
         for character in state["characters"]:
             character["summary"] = rules.summary(character)
             character["sheet_statistics"] = sheet_rules.statistics(character["sheet"], character["attributes"])
+            character['progression'] = describe(character)
         return state
 
     def execute(self, room_id: str, command: dict, request_id: str) -> dict:
@@ -125,8 +128,28 @@ class RosterStore:
             revision = integer(command.get("revision"), "Ревизия", 0, 9223372036854775806)
             if revision != state["revision"]:
                 raise MessageConflict("Данные изменились в другом окне. Обновите список и повторите изменение.")
+            session_state = None
+            if command.get('action') in ('configure_build', 'update_character', 'delete_character'):
+                for table in ('encounters', 'adventures'):
+                    if connection.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone():
+                        row = connection.execute(f'SELECT body FROM {table} WHERE room_id=?', (room_id,)).fetchone()
+                        current = json.loads(row[0]) if row else {}
+                        if current.get('status') == 'active' or current.get('pending_check'):
+                            raise MessageConflict('Закончите бой или проверку перед изменением персонажа.')
+                        if table == 'adventures' and command.get('action') == 'configure_build' and current.get('character_id') == command.get('id') and current.get('hero_hp') is not None:
+                            session_state = current
+                            actor = next(a for a in state['characters'] if a['id'] == command['id'])
+                            actor['sheet']['values']['hp_current'] = min(actor['sheet']['values']['hp_current'], current['hero_hp'])
+                if connection.execute("SELECT 1 FROM sqlite_master WHERE name='ai_requests'").fetchone():
+                    import time
+                    if any(json.loads(r[0]).get('status') in ('running', 'chosen') for r in connection.execute('SELECT body FROM ai_requests WHERE room_id=? AND started>?', (room_id, time.time()-120))):
+                        raise MessageConflict('Дождитесь ответа мастера перед изменением персонажа.')
             entity_id = apply_command(state, command, InventoryRules(state["rules"]),
                                       CharacterRules(state["character_rules"]))
+            if session_state is not None:
+                session_state['hero_hp'] = next(a for a in state['characters'] if a['id'] == entity_id)['sheet']['values']['hp_current']
+                session_state['revision'] += 1
+                connection.execute('UPDATE adventures SET body=? WHERE room_id=?', (encode(session_state), room_id))
             # Replace only this room's rows within one transaction. Foreign keys also
             # enforce that ownership and inventory never cross room boundaries.
             for table in ("inventory_items", "characters", "players"):

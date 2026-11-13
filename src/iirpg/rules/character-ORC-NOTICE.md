@@ -102,3 +102,12 @@ unarmed damage are scenario parameters, not reproduced published NPC blocks.
 
 `adventure_items.json` contains IIRPG-authored story props and illustrative
 inventory parameters, not copied official equipment stat blocks.
+
+`progression_pf2e.json`, `progression.py` and `magic.py` adapt Player Core
+(2023) class, general feat and spell mechanics. Checked November 13, 2026;
+individual sources and page references are recorded in
+`data/pathfinder2e-remaster/rules/starter-classes-and-magic.md` and in the config.
+IIRPG contributors supplied Russian labels, starter statistics and bounded
+implementations. School features, full class progression and many options are
+omitted. These adaptations are Licensed Material under the ORC License with
+the attribution above, not a relicensing of Paizo material under the code license.

@@ -4,6 +4,8 @@ from .combat_tactics import active, fighter_id, target_index, team
 from .scene_rules import prepare_tip_over
 from .combat_conditions import status_penalty
 from .demoralize import prepare_demoralize
+from .magic import prepare_spell
+from .progression import RULES as BUILD_RULES
 
 
 def strike_target(state: dict, victim_id: str | None = None) -> int:
@@ -38,6 +40,20 @@ def available_actions(state: dict, scene: dict | None, roster: dict | None,
     if state['actions'] > 0 and not actor['shield'] and actor.get('has_shield',True):
         result['general'].append(choice('shield', 'Поднять щит'))
     result['general'].append(choice('end_turn', 'Закончить ход', 0))
+    def spells(target_id=None):
+        for spell_id in BUILD_RULES['classes'].get(actor.get('build', {}).get('class_id'), {}).get('spells', []):
+            spell = BUILD_RULES['spells'][spell_id]
+            if ('range_feet' in spell) != (target_id is not None):
+                continue
+            for cost in spell['costs']:
+                try:
+                    prepare_spell(state, scene, spell_id, cost, target_id)
+                    entry = choice('cast_spell', spell['name'] + (f' · {cost} снар.' if spell_id == 'force_barrage' else ''), cost,
+                                   spell_id=spell_id, spell_actions=cost, **({'target_id': target_id} if target_id else {}))
+                    result['selected' if target_id else 'general'].append(entry)
+                except ValueError:
+                    pass
+    spells()
     if state.get('mapped'):
         if position is None:
             return result
@@ -79,6 +95,7 @@ def available_actions(state: dict, scene: dict | None, roster: dict | None,
             result['selection_label'] = state['fighters'][victims[0]]['name']
     for victim in victims:
         target_id = fighter_id(state, victim)
+        spells(target_id)
         if state.get('skill_rules'):
             try:
                 prepare_demoralize(state, scene, target_id)

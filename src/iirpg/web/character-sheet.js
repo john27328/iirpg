@@ -8,8 +8,8 @@ const node = (tag, className = "", text = "") => {
 };
 
 export class CharacterSheetWindow {
-  constructor(dialog, state, save, changed) {
-    Object.assign(this, { dialog, state, save, changed, actorId: null, editing: false, disabled: false });
+  constructor(dialog, state, save, changed, configure) {
+    Object.assign(this, { dialog, state, save, changed, configure, actorId: null, editing: false, disabled: false });
     dialog.innerHTML = `
       <header class="sheet-header"><div><div class="eyebrow sheet-kind"></div><h2 class="sheet-name"></h2><p class="sheet-owner muted"></p></div><button type="button" class="button-secondary sheet-close">Закрыть</button></header>
       <nav class="sheet-tabs workspace-tabs" aria-label="Лист персонажа"><button type="button" class="sheet-view-tab" aria-pressed="true">Лист персонажа</button><button type="button" class="sheet-edit-tab" aria-pressed="false">Редактировать</button></nav>
@@ -128,6 +128,7 @@ export class CharacterSheetWindow {
       attributes.append(card);
     }
     root.append(attributes);
+    this.renderBuild(root, actor);
     for (const [group, label] of Object.entries(config.groups)) {
       const fields = Object.entries(profile.fields).filter(([, spec]) => spec.group === group && spec.overview !== false);
       const stats = Object.entries(profile.statistics).filter(([, spec]) => spec.group === group);
@@ -170,6 +171,46 @@ export class CharacterSheetWindow {
   }
 
   format(value, signed = false) { return signed && value >= 0 ? `+${value}` : String(value); }
+
+  renderBuild(root, actor) {
+    const config = this.state().build_rules;
+    if (!config) return;
+    const section = node('section', 'sheet-section');
+    section.append(node('h3', '', 'Класс, перк и магия'));
+    if (actor.progression) {
+      const p = actor.progression;
+      section.append(node('p', '', `${p.name} · ${p.feat.name}`), node('p', 'muted', p.features), node('p', '', p.feat.description));
+      if (p.slots_max) section.append(node('p', 'spell-slots', `Подготовленные ячейки I ранга: ${p.slots_remaining} / ${p.slots_max}`));
+      if (p.light) section.append(node('p', '', 'Активен шар света у героя.'));
+      for (const spell of Object.values(p.spells)) {
+        const card = node('p', '');
+        card.append(node('strong', '', spell.name + (spell.rank ? ' · I ранг' : ' · заговор')), node('br'), document.createTextNode(spell.description));
+        section.append(card);
+      }
+      if (p.slots_max) section.append(node('p', 'muted', 'В бою выберите клетку врага: появятся заклинания. В чате можно попросить «Создаю свет», «Обнаруживаю магию» или «Отдыхаю 8 часов и готовлю заклинания».'));
+    }
+    const details = node('details', 'sheet-editor-group');
+    details.open = !actor.build;
+    details.append(node('summary', '', actor.build ? 'Изменить стартовую сборку' : 'Выбрать стартовую сборку'));
+    details.append(node('p', 'muted', config.description + ' Применение заменит характеристики и базовые показатели. Имя, предметы, описание, полученные раны и потраченные ячейки сохраняются.'));
+    const form = node('form', 'sheet-form-grid');
+    const label = node('label', '', 'Класс'); const select = node('select'); select.name = 'class_id';
+    for (const [id, spec] of Object.entries(config.classes)) select.add(new Option(spec.name, id));
+    select.value = actor.build?.class_id || 'fighter'; label.append(select);
+    const featLabel = node('label', '', 'Общий перк от универсального наследия'); const feat = node('select'); feat.name = 'general_feat';
+    for (const [id, spec] of Object.entries(config.feats)) feat.add(new Option(spec.name, id));
+    feat.value = actor.build?.general_feat || 'fleet'; featLabel.append(feat);
+    const preview = node('p', 'muted wide-field');
+    const update = () => { preview.textContent = config.classes[select.value].description + ' ' + config.feats[feat.value].description; };
+    select.addEventListener('change', update); feat.addEventListener('change', update); update();
+    const button = node('button', 'button-secondary', 'Применить сборку'); button.type = 'submit';
+    form.append(label, featLabel, preview, button);
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!this.disabled) await this.configure(this.actorId, {class_id: select.value, general_feat: feat.value});
+    });
+    details.append(form); section.append(details); root.append(section);
+  }
 
   field(key, spec, value, attribute = false) {
     const label = node("label", "", spec.label);

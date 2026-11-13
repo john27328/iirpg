@@ -20,6 +20,9 @@ from .combat_conditions import armor_class, status_penalty
 from .demoralize import demoralize
 from .gm_context import describe_proposal, matches_requested_action
 from .intent_dialogue import append_message
+from .progression import combat_profile
+from .magic import cast_spell, flanking
+from .character_resources import sync_fighters
 from .combat_tactics import (active, communicate, may_surrender,
                              observe, remember_event, target_index, team)
 
@@ -83,7 +86,7 @@ class CombatStore:
             UUID(request_id)
         except (ValueError, TypeError, AttributeError):
             raise ValueError('Нужен UUID Idempotency-Key.') from None
-        if set(command) - {'action', 'revision', 'character_id', 'character_ids', 'actor_id', 'position', 'target_id', 'group_id', 'preset_id', 'text', 'intent_id', 'effect', 'summary', 'delivery', 'review', 'requested_action'}:
+        if set(command) - {'action', 'revision', 'character_id', 'character_ids', 'actor_id', 'position', 'target_id', 'group_id', 'preset_id', 'text', 'intent_id', 'effect', 'summary', 'delivery', 'review', 'requested_action', 'spell_id', 'spell_actions'}:
             raise ValueError('Неизвестные поля боя.')
         encoded = json.dumps(command, sort_keys=True, allow_nan=False)
         with (nullcontext(_connection) if _connection is not None else self.store._connection()) as c:
@@ -114,7 +117,7 @@ class CombatStore:
                 fighters = before.get('fighters') or []
                 actor_index = before.get('turn')
                 actor = fighters[actor_index]['name'] if fighters else None
-                victim = state['last_attack']['target_index'] if kind == 'strike' else state['last_check']['target_index'] if kind == 'demoralize' else None
+                victim = state['last_attack']['target_index'] if kind == 'strike' else state['last_check']['target_index'] if kind == 'demoralize' else state['last_spell'].get('target_index') if kind == 'cast_spell' else None
                 event = {'action': kind, 'command': input_action, 'actor': actor,
                          'target': fighters[victim]['name'] if victim is not None else None,
                          'actor_index': actor_index if fighters else None,
@@ -128,6 +131,8 @@ class CombatStore:
                     event['roll'] = deepcopy(state['last_attack'])
                 if kind == 'demoralize':
                     event['check'] = deepcopy(state['last_check'])
+                if kind == 'cast_spell':
+                    event['spell'] = deepcopy(state['last_spell'])
                 events.append({'text': text, 'details': event})
                 if fighters and kind not in ('intent', 'clarify_intent', 'reject_intent', 'offer_intent'):
                     remember_event(state, scene, kind, actor_index, victim)
@@ -182,7 +187,7 @@ class CombatStore:
                         'hp': actor['sheet']['values']['hp_current'], 'max_hp':actor['sheet']['values']['hp_max'], 'ac': stats['armor_class'], 'perception': stats['perception'],
                         'attack': strength + actor['sheet']['values'].get('level', 1) + self.rules['player']['proficiency_offset'],
                         'damage_die': self.rules['player']['die'], 'damage_bonus': strength,
-                        'speed': actor['sheet']['values'].get('speed', 25)})
+                        'speed': actor['sheet']['values'].get('speed', 25), **combat_profile(actor)})
                 group_id = preset['group_id'] if preset else command.get('group_id', 'duel')
                 if not isinstance(group_id, str):
                     raise ValueError('group_id должен быть строкой.')
@@ -203,7 +208,7 @@ class CombatStore:
                 for fighter in fighters:
                     fighter.update(max_hp=fighter.get('max_hp',fighter['hp']), shield=False)
                     fighter['initiative_die'] = self.roll_die(20)
-                    fighter['initiative'] = fighter['initiative_die'] + fighter['perception']
+                    fighter['initiative'] = fighter['initiative_die'] + fighter['perception'] + fighter.get('initiative_bonus', 0)
                 # NPC wins tied initiative against PCs.
                 order = sorted(range(len(fighters)), key=lambda i: (fighters[i]['initiative'], fighters[i]['team'] == 'enemies', -i), reverse=True)
                 state = {'revision': state['revision'], 'id': encounter_id, 'status': 'active', 'rules': self.rules,
@@ -300,7 +305,7 @@ class CombatStore:
                         action = proposal['effect']
                     elif action == 'resolve_intent':
                         action = command.get('effect')
-                    if action not in ('clarify_intent', 'offer_intent', 'strike', 'shield', 'move', 'take_cover', 'tip_over', 'end_turn', 'reject_intent', 'demoralize'):
+                    if action not in ('clarify_intent', 'offer_intent', 'strike', 'shield', 'move', 'take_cover', 'tip_over', 'end_turn', 'reject_intent', 'demoralize', 'cast_spell'):
                         raise ValueError('Выберите реализуемое действие или отклоните намерение.')
                     source_text = resolved_intent['text']
                 snapshot_before = snapshot()
@@ -316,7 +321,7 @@ class CombatStore:
                     intent['messages'] = [{'role': 'user', 'text': source_text.strip()}]
                     if command.get('requested_action') is not None:
                         requested = command['requested_action']
-                        if not isinstance(requested, dict) or set(requested) - {'action','target_id','position','delivery'} or requested.get('action') not in ('strike','move','shield','take_cover','tip_over','demoralize','end_turn'):
+                        if not isinstance(requested, dict) or set(requested) - {'action','target_id','position','delivery','spell_id','spell_actions'} or requested.get('action') not in ('strike','move','shield','take_cover','tip_over','demoralize','end_turn','cast_spell'):
                             raise ValueError('Нужна поддерживаемая команда действия.')
                         describe_proposal(state, scene, roster, {'effect': requested['action'], **{k:v for k,v in requested.items() if k!='action'}})
                         intent['requested_action'] = deepcopy(requested)
@@ -343,12 +348,16 @@ class CombatStore:
                     record('offer_intent', 'ИИ-ведущий: ' + proposal['summary'] + ' ' + detail, before)
                 elif action == 'demoralize':
                     record('demoralize', demoralize(state, scene, command.get('target_id'), command.get('delivery','speech'), self.roll_die), before)
+                elif action == 'cast_spell':
+                    text = cast_spell(state, scene, command.get('spell_id'), command.get('spell_actions'), command.get('target_id'), self.roll_die)
+                    self.finish_if_won(state)
+                    record('cast_spell', text, before)
                 elif action == 'reject_intent':
                     if not resolved_intent:
                         raise ValueError('Отклоняйте намерение через resolve_intent.')
                     record('reject_intent', 'Намерение отклонено: «' + source_text + '».', before)
                 elif action == 'strike':
-                    record('strike', self.strike(state, command.get('target_id')), snapshot_before)
+                    record('strike', self.strike(state, command.get('target_id'), scene), snapshot_before)
                 elif action == 'move':
                     if not state.get('mapped'):raise ValueError('Бой не связан с картой.')
                     record('move', move_fighter(state,scene,command.get('position')), before)
@@ -405,7 +414,7 @@ class CombatStore:
                                 state['actions']=0
                                 record('wait',events_text,snapshot_before)
                             else:record('move',move_fighter(state,scene,destination),snapshot_before)
-                        else:record('strike', self.strike(state), snapshot_before)
+                        else:record('strike', self.strike(state, scene=scene), snapshot_before)
                     if state['status'] == 'active':
                         before_turn = snapshot()
                         self.end_turn(state)
@@ -416,6 +425,7 @@ class CombatStore:
                 if resolved_intent and action not in ('offer_intent', 'clarify_intent'):
                     resolved_intent.update(status='rejected' if action == 'reject_intent' else 'resolved', effect=action)
                     if action == 'demoralize':resolved_intent['check_result'] = deepcopy(state['last_check'])
+            sync_fighters(c, room, state['fighters'], roster)
             if state.get('mapped'):
                 for fighter in state['fighters']:
                     entity=next((e for e in scene['entities'] if e['id']==fighter['entity_id']),None)
@@ -456,25 +466,34 @@ class CombatStore:
                 break
         state['turns_elapsed'] = state.get('turns_elapsed', 0) + 1
         state['actions'], state['attacks'] = state['rules']['actions'], 0
-        state['fighters'][state['turn']]['shield'] = False
+        incoming = state['fighters'][state['turn']]
+        incoming['shield'] = False
+        stunned = incoming.pop('stunned', 0)
+        state['actions'] = max(0, state['actions'] - stunned)
 
-    def strike(self, state: dict, victim_id: str | None = None) -> str:
+    def strike(self, state: dict, victim_id: str | None = None, scene: dict | None = None) -> str:
         victim = strike_target(state, victim_id)
         attacker, target = state['fighters'][state['turn']], state['fighters'][victim]
         attacker['cover']=None
-        penalty = state['rules']['map'][min(state['attacks'], 2)]
+        penalty = ([0, -4, -8] if attacker.get('agile') else state['rules']['map'])[min(state['attacks'], 2)]
         natural = self.roll_die(20)
         total = natural + attacker['attack'] + penalty - status_penalty(attacker)
-        dc = armor_class(state, target)
+        off_guard = flanking(state, scene, state['turn'], victim)
+        dc = armor_class(state, target) - (2 if off_guard else 0)
         outcome = degree(natural, total, dc)
         damage_roll = self.roll_die(attacker['damage_die']) if outcome >= 2 else 0
-        damage = max(0, damage_roll + attacker['damage_bonus']) * (2 if outcome == 3 else 1) if outcome >= 2 else 0
+        precision = self.roll_die(6) if outcome >= 2 and off_guard and attacker.get('sneak_attack') and 'precision' not in target.get('immunities', []) else 0
+        damage = max(0, damage_roll + attacker['damage_bonus'] + precision) * (2 if outcome == 3 else 1) if outcome >= 2 else 0
         target['hp'] = max(0, target['hp'] - damage)
         state['actions'] -= 1
         state['attacks'] += 1
         state['last_attack'] = {'natural': natural, 'total': total, 'dc': dc, 'map': penalty, 'degree': outcome, 'damage_die': damage_roll, 'damage': damage, 'target_index': victim}
+        if off_guard:
+            state['last_attack'].update(off_guard=True, precision=precision)
         label = ['критический провал', 'промах', 'попадание', 'критическое попадание'][outcome]
         text = f"{attacker['name']} — удар {attacker.get('weapon','мечом')}: d20={natural}, итог {total} против КБ {dc} — {label}; урон {damage}. ОЗ цели {target['hp']}/{target['max_hp']}."
+        if off_guard:
+            text += ' Цель застигнута врасплох из-за окружения.' + (f' Скрытая атака 1d6={precision}.' if precision else '')
         self.finish_if_won(state)
         if state['status'] == 'finished':
             text += f" Учебный бой окончен. Победитель: {state['winner']}."

@@ -152,6 +152,10 @@ def remember_event(state: dict, scene: dict | None, action: str, actor: int, tar
                 event['attack_penalty'] = state['last_attack']['map']
             if observer == target:
                 event['damage_taken'] = state['last_attack']['damage']
+        if action == 'cast_spell':
+            event['spell_id'] = state['last_spell']['spell_id']
+            if observer == target:
+                event['damage_taken'] = state['last_spell'].get('damage', 0)
         memory['events'] = (memory['events'] + [event])[-8:]
 
 
