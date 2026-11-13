@@ -1,0 +1,294 @@
+{
+  "schema_version": 1,
+  "kind": "condensed_reference_cards",
+  "status": "reference_only_not_bound_to_runtime",
+  "edition": "Pathfinder Second Edition Remaster",
+  "license": "ORC",
+  "notice": "ORC-NOTICE.md",
+  "checked_at": "2026-11-13",
+  "scope": "Single-target summaries for retrieval and implementation planning. Full source rules remain authoritative. This file is not an executable rules configuration.",
+  "cards": [
+    {
+      "id": "interact",
+      "label": "Взаимодействовать",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2297",
+      "local_source": "rules/playing-the-game.md",
+      "cost": {
+        "actions": 1
+      },
+      "traits": [
+        "manipulate"
+      ],
+      "check": "Usually none; use a specific action/check where required.",
+      "requirements": [
+        "Object or terrain is accessible; appropriate hands can manipulate it."
+      ],
+      "effects": [
+        "Move an existing object, change grip, open an operable door or comparable manipulation."
+      ]
+    },
+    {
+      "id": "seek",
+      "label": "Искать скрытое",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2301",
+      "local_source": "rules/playing-the-game.md",
+      "cost": {
+        "actions": 1,
+        "scope": "GM determines the searchable area and can adjust the cost."
+      },
+      "traits": [
+        "concentrate",
+        "secret"
+      ],
+      "statistic": "perception",
+      "dc": "Stealth DC of a hidden creature, or object detection DC.",
+      "effects": [
+        "Reveal detections according to degree and available senses; not every detected creature becomes observed."
+      ]
+    },
+    {
+      "id": "sense_motive",
+      "label": "Оценить поведение",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2302",
+      "local_source": "rules/playing-the-game.md",
+      "cost": {
+        "actions": 1
+      },
+      "traits": [
+        "concentrate",
+        "secret"
+      ],
+      "statistic": "perception",
+      "dc": "Target Deception DC, a relevant mental effect DC, or another appropriate DC.",
+      "retry": "Normally requires a significant change in situation.",
+      "outcomes": {
+        "critical_success": "Determine intentions and gain an idea of relevant mental magic.",
+        "success": "Assess whether behavior is normal, without precise intentions.",
+        "failure": "Perceive the intended impression; a nondeceptive target appears normal.",
+        "critical_failure": "Receive a false impression of intentions."
+      }
+    },
+    {
+      "id": "make_impression",
+      "label": "Расположить к себе",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2392",
+      "local_source": "skills/diplomacy.md",
+      "cost": {
+        "minimum_seconds": 60
+      },
+      "traits": [
+        "auditory",
+        "concentrate",
+        "exploration",
+        "linguistic",
+        "mental"
+      ],
+      "statistic": "diplomacy",
+      "dc": "Will DC.",
+      "scope": "Single-target reference; consult the full rule for multiple targets.",
+      "outcomes": {
+        "critical_success": "Improve NPC attitude two steps.",
+        "success": "Improve NPC attitude one step.",
+        "failure": "No listed attitude change.",
+        "critical_failure": "Worsen NPC attitude one step."
+      },
+      "duration": "Normally the current social interaction unless the GM decides otherwise.",
+      "restriction": "Does not determine a player character's attitude or choices."
+    },
+    {
+      "id": "request",
+      "label": "Попросить услугу",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2393",
+      "local_source": "skills/diplomacy.md",
+      "cost": {
+        "actions": 1
+      },
+      "traits": [
+        "auditory",
+        "concentrate",
+        "linguistic",
+        "mental"
+      ],
+      "statistic": "diplomacy",
+      "requirements": [
+        "Target is friendly or helpful.",
+        "Request is acceptable in context; some requests remain impossible."
+      ],
+      "dc": "GM sets difficulty for this particular request.",
+      "outcomes": {
+        "critical_success": "Agreement without qualifications.",
+        "success": "Agreement, potentially with conditions or modifications.",
+        "failure": "Refusal, potentially with an alternative.",
+        "critical_failure": "Refusal and attitude worsens one step."
+      }
+    },
+    {
+      "id": "coerce",
+      "label": "Принудить угрозой",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2394",
+      "local_source": "skills/intimidation.md",
+      "cost": {
+        "minimum_seconds": 60
+      },
+      "traits": [
+        "auditory",
+        "concentrate",
+        "emotion",
+        "exploration",
+        "linguistic",
+        "mental"
+      ],
+      "statistic": "intimidation",
+      "dc": "Will DC with relevant circumstances.",
+      "outcomes": {
+        "critical_success": "Compliance with nonharmful directives for GM-determined duration, at most one day; subsequent unfriendly attitude; short-term retaliation prevented.",
+        "success": "As critical success, but later retaliation is possible.",
+        "failure": "No compliance; attitude becomes unfriendly unless already unfriendly or hostile.",
+        "critical_failure": "No compliance; hostile attitude; temporary immunity to Coerce for at least one week."
+      }
+    },
+    {
+      "id": "demoralize",
+      "label": "Деморализовать",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2395",
+      "local_source": "skills/intimidation.md",
+      "cost": {
+        "actions": 1
+      },
+      "traits": [
+        "auditory",
+        "concentrate",
+        "emotion",
+        "fear",
+        "mental"
+      ],
+      "statistic": "intimidation",
+      "dc": "Will DC.",
+      "requirements": [
+        "Aware of a target within 30 feet."
+      ],
+      "modifiers": [
+        "A -4 penalty when not speaking an understood language."
+      ],
+      "outcomes": {
+        "critical_success": "Frightened 2.",
+        "success": "Frightened 1.",
+        "failure": "No listed fear effect.",
+        "critical_failure": "No additional listed fear effect."
+      },
+      "retry": "Target is immune to this actor's Demoralize for 10 minutes regardless of outcome."
+    },
+    {
+      "id": "aid",
+      "label": "Помочь с проверкой",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2292",
+      "local_source": "rules/playing-the-game.md",
+      "cost": {
+        "reactions": 1,
+        "preparation": "Usually at least one action; task-dependent."
+      },
+      "requirements": [
+        "Willing ally.",
+        "Task-specific preparation and suitable position/communication.",
+        "Triggering skill check or attack roll."
+      ],
+      "statistic": "GM selects an appropriate skill or attack roll.",
+      "dc": "Usually 15; GM can adjust for the task.",
+      "outcomes": {
+        "critical_success": "Circumstance bonus +2, or +3 for master / +4 for legendary proficiency.",
+        "success": "Circumstance bonus +1.",
+        "failure": "No listed modifier.",
+        "critical_failure": "Circumstance penalty -1."
+      },
+      "scope": "Applies to the specific triggering check, not a permanent bonus."
+    },
+    {
+      "id": "force_open",
+      "label": "Открыть силой",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2375",
+      "local_source": "skills/athletics.md",
+      "cost": {
+        "actions": 1
+      },
+      "traits": [
+        "attack"
+      ],
+      "statistic": "athletics",
+      "minimum_proficiency": "untrained",
+      "dc": "Obstacle DC.",
+      "modifiers": [
+        "Prying without a crowbar normally imposes a -2 item penalty."
+      ],
+      "outcomes": {
+        "critical_success": "Open; can avoid damaging the obstacle.",
+        "success": "Force open and break the obstacle; unusually sturdy obstacles may only take damage.",
+        "failure": "No listed opening effect.",
+        "critical_failure": "Jam it; later Force Open attempts take a -2 circumstance penalty."
+      }
+    },
+    {
+      "id": "pick_lock",
+      "label": "Вскрыть замок",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2412",
+      "local_source": "skills/thievery.md",
+      "cost": {
+        "actions": 2
+      },
+      "traits": [
+        "manipulate"
+      ],
+      "statistic": "thievery",
+      "minimum_proficiency": "trained",
+      "requirements": [
+        "Held or worn thieves' toolkit, or GM-approved improvised picks treated as shoddy."
+      ],
+      "dc": "Specific lock DC.",
+      "progress": "Lock quality can require multiple successes.",
+      "outcomes": {
+        "critical_success": "Unlock, or add two successes; no traces.",
+        "success": "Unlock, or add one success; detectable traces.",
+        "failure": "No listed progress.",
+        "critical_failure": "Break the toolkit and leave obvious damage."
+      }
+    },
+    {
+      "id": "steal",
+      "label": "Украсть незаметно",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2410",
+      "local_source": "skills/thievery.md",
+      "cost": {
+        "actions": 1
+      },
+      "traits": [
+        "manipulate"
+      ],
+      "statistic": "thievery",
+      "requirements": [
+        "Free hand.",
+        "Typically a negligible-Bulk object.",
+        "Automatic failure if the owner is in combat or on guard."
+      ],
+      "dc": "Usually owner Perception DC, with protection adjustments; observers may also matter.",
+      "outcomes": {
+        "success": "Transfer an existing object without the relevant observer noticing.",
+        "failure": "Attempt noticed before taking it; GM determines response."
+      }
+    },
+    {
+      "id": "improvised_action",
+      "label": "Необычная заявка",
+      "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2497",
+      "local_source": "rules/adjudication-reference.md",
+      "cost": {
+        "policy": "Use the closest defined action; an undefined quick action generally costs one or two actions."
+      },
+      "requirements": [
+        "Situation-specific ruling with appropriate traits, skill/DC if needed, and bounded consequences."
+      ],
+      "effects": [
+        "Apply the accepted ruling; a one-off exception need not establish an unlimited ability."
+      ],
+      "additional_source_url": "https://2e.aonprd.com/Rules.aspx?ID=2504"
+    }
+  ]
+}

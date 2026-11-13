@@ -75,3 +75,18 @@ Changes are limited to mechanical extraction, Markdown formatting, absolute
 links, expanded table cells, and the exclusions described above and recorded
 in `sources.json`. English rule text is otherwise retained from the source.
 Refer to the original source if an omitted example or linked catalogue is needed.
+
+## Supplements checked November 13, 2026
+
+`rules/adjudication-reference.md` and `action-reference-cards.json` are concise
+IIRPG paraphrases and structured adaptations of Licensed Material from Player
+Core (2023) and GM Core (2023), under the ORC License with the attribution above.
+Individual source URLs and book pages accompany the summaries. They include
+general adjudication guidance, standard skill actions, and limited reference
+cards, not copied setting examples or full chapters. `rules/starter-classes-and-magic.md`
+is also a separately labeled IIRPG adaptation. These supplements do not replace
+the original snapshot or alter its stored checksums.
+
+The software architecture in `docs/general-action-rules.md` is IIRPG design;
+it is not represented as an official Pathfinder software contract. Third-party
+mechanics summarized there retain their source license and attribution.
