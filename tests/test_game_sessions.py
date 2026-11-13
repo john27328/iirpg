@@ -10,7 +10,7 @@ class GameSessionTests(unittest.TestCase):
     setUp=fixtures.GMIntentTests.setUp
     command=fixtures.GMIntentTests.command
     roster_command=fixtures.GMIntentTests.roster_command
-    def games(self):return GameSessions(AdventureStore(AIService(self.combat,self.scene,load_config(),fixtures.GMClient())))
+    def games(self):return GameSessions(AdventureStore(AIService(self.combat,self.scene,load_config(),__import__('story_fixtures').Client())))
     def act(self,games,action,**extra):return games.execute({'action':action,**extra},str(uuid4()))
     def test_create_save_restore_and_delete_are_isolated_and_idempotent(self):
         games=self.games();key=str(uuid4());command={'action':'create','name':'Проба','scenario':'missing-book'}
@@ -42,7 +42,7 @@ class GameSessionTests(unittest.TestCase):
     def test_checkpoint_preserves_pending_player_roll_and_deleted_usage(self):
         games=self.games();self.act(games,'register',room_id=self.room)
         client=games.adventure.ai.client
-        client.complete=lambda *a:{'content':json.dumps({'narration':'Проверка усилия.','action':'check','destination':'','skill':'athletics','objective':''})}
+        client.complete=lambda *a:{'content':json.dumps({'intent':'act','reply':'','steps':[{'rule':'move','target':'store'},{'rule':'force_open','target':'chest'}]})}
         story=games.adventure.execute(self.room,{'revision':0,'character_id':self.actor,'text':'Поднимаю груз'},str(uuid4()))
         pending=story['pending_check'];self.act(games,'save',room_id=self.room)
         from iirpg.application import ChatService
@@ -50,7 +50,7 @@ class GameSessionTests(unittest.TestCase):
         service=ChatService(self.store,DiceTool(roll_die=lambda sides:20))
         payload={'sender':'first','type':'tool.call','tool':'dice.roll','request_id':pending['roll_request_id'],'offer_id':pending['offer_id']}
         service.send(self.room,payload);self.assertNotIn('pending_check',games.adventure.read(self.room))
-        client.complete=lambda *a:{'content':json.dumps({'narration':'Груз поднят.','action':'narrate','destination':'','skill':'','objective':''})}
+        client.complete=lambda *a:{'content':json.dumps({'intent':'question','reply':'Попытка завершена.','steps':[]})}
         games.adventure.react(self.room,pending['offer_id'])
         used=games.adventure.ai.status()['requests_today']
         self.act(games,'load',room_id=self.room);restored=games.adventure.read(self.room)
@@ -71,7 +71,12 @@ class GameSessionTests(unittest.TestCase):
         with self.store._connection() as c:
             state['location']='store'
             c.execute('UPDATE adventures SET body=? WHERE room_id=?',(json.dumps(state),room))
-        games.adventure.ai.client.complete=lambda *a:{'content':json.dumps({'narration':'Верёвка.','action':'take','destination':'','skill':'','objective':'rope'})}
+        games.adventure.ai.client.complete=lambda *a:{'content':json.dumps({'intent':'act','reply':'','steps':[{'rule':'move','target':'store'},{'rule':'take','target':'rope'}]})}
+        roster=self.roster.read(room)
+        hero=next(a for a in roster['characters'] if a['id']==state['character_id'])
+        for item in hero['items']:
+            if item.get('hands',0):
+                self.roster.execute(room,{'action':'update_item','revision':self.roster.read(room)['revision'],'character_id':hero['id'],'id':item['id'],'data':{**{k:v for k,v in item.items() if k!='id'},'state':'stowed','hands':0}},str(uuid4()))
         state=games.adventure.execute(room,{'revision':state['revision'],'character_id':state['character_id'],'text':'Беру верёвку'},str(uuid4()))
         self.act(games,'save',room_id=room)
         roster=self.roster.read(room);actor=next(a for a in roster['characters'] if a['id']==state['character_id'])

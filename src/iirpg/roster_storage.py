@@ -129,7 +129,7 @@ class RosterStore:
             if revision != state["revision"]:
                 raise MessageConflict("Данные изменились в другом окне. Обновите список и повторите изменение.")
             session_state = None
-            if command.get('action') in ('configure_build', 'update_character', 'delete_character'):
+            if command.get('action') in ('configure_build', 'update_character', 'delete_character', 'add_item', 'update_item', 'remove_item', 'set_item_state'):
                 for table in ('encounters', 'adventures'):
                     if connection.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone():
                         row = connection.execute(f'SELECT body FROM {table} WHERE room_id=?', (room_id,)).fetchone()

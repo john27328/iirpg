@@ -173,6 +173,12 @@ class ChatStore:
                 if result is None:
                     raise RuntimeError("У сохранённого вызова отсутствует результат.")
                 return self._decode(result)
+            # Revocation is an append-only event, checked in the same transaction as the roll.
+            if call.get("offer_id") and connection.execute(
+                "SELECT 1 FROM queue_events WHERE room_id=? AND json_extract(envelope, '$.metadata.cancelled_offer_id')=?",
+                (room_id, call["offer_id"]),
+            ).fetchone():
+                raise MessageConflict("Эта попытка отменена; кости не брошены.")
             if connection.execute(
                 "SELECT 1 FROM queue_events WHERE room_id = ? AND request_id = ?", (room_id, result_id),
             ).fetchone():

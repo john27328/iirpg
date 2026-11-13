@@ -198,6 +198,8 @@ class CombatStore:
                 if _session is not None and _session.get('hero_hp') is not None:
                     if _session['hero_hp']<=0:raise ValueError('Герой выбыл из столкновения и пока не может снова драться.')
                     heroes[0]['hp']=min(heroes[0]['hp'],_session['hero_hp'])
+                if _session is not None and _session.get('target_name'):
+                    enemies[0]['name'] = _session['target_name']
                 enemy = enemies[0]
                 player = heroes[0]
                 fighters = [*heroes, *enemies]

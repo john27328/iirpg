@@ -35,6 +35,7 @@ return class Chat {
     this.retry = null;
     this.ids = new Set();
     this.toolCalls = new Map();
+    this.cancelledOffers = new Set();
     this.element = getChatTemplate().content.firstElementChild.cloneNode(true);
     this.element.classList.add(options.id || key);
     $("h2", this.element).textContent = options.title || "Приключение";
@@ -101,6 +102,7 @@ return class Chat {
     this.thinking?.remove();
     this.ids.clear();
     this.toolCalls.clear();
+    this.cancelledOffers.clear();
     this.cursor = 0;
     this.hasMore = false;
     this.retry = null;
@@ -116,6 +118,12 @@ return class Chat {
 
   receive(message) {
     if(message.metadata?.client_request_id===this.retry?.request_id)this.optimistic?.remove();
+    if (message.metadata?.cancelled_offer_id) {
+      const id = message.metadata.cancelled_offer_id;
+      this.cancelledOffers.add(id);
+      const entry = this.toolCalls.get(id);
+      if (entry?.offer) this.receiveDice(entry.offer);
+    }
     if (this.ids.has(message.id)) return;
     this.ids.add(message.id);
     $(".empty-state", this.list)?.remove();
@@ -179,6 +187,7 @@ return class Chat {
     const entry = this.toolCalls.get(key);
     entry[isOffer ? "offer" : isResult ? "result" : "call"] = message;
     const { offer, call, result, item } = entry;
+    const cancelled = offer && this.cancelledOffers.has(offer.request_id);
     const source = offer || call || result;
     const owner = call?.sender || result?.requested_by || offer.recipient;
     const outgoing = offer ? offer.sender === this.key : owner === this.key;
@@ -231,7 +240,8 @@ return class Chat {
       body.append(description);
     }
     body.append(line);
-    if (offer && !call && !result && offer.recipient === this.key) {
+    if (cancelled) outcome.textContent = "Попытка отменена";
+    if (offer && !call && !result && !cancelled && offer.recipient === this.key) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "button-secondary dice-offer-roll";
@@ -243,6 +253,24 @@ return class Chat {
       error.setAttribute("role", "alert");
       error.hidden = true;
       body.append(button, error);
+      if (offer.metadata?.session_check) {
+        const cancel = document.createElement('button');
+        cancel.type = 'button'; cancel.className = 'button-secondary dice-offer-roll';
+        cancel.textContent = 'Отменить попытку';
+        cancel.disabled = button.disabled;
+        cancel.addEventListener('click', async () => {
+          if (this.busy) return;
+          this.busy = true; this.update();
+          const epoch = env.context().generation, targetRoom = env.context().room;
+          try {
+            await env.request(`/api/rooms/${targetRoom}/session/cancel`, {method:'POST', body:JSON.stringify({offer_id:offer.request_id})});
+            if (epoch === env.context().generation) await (this.options.refresh ? this.options.refresh() : env.refreshChats(targetRoom,epoch));
+          } catch (failure) {
+            if (epoch === env.context().generation) { error.textContent = failure.message; error.hidden = false; }
+          } finally { if (epoch === env.context().generation) { this.busy = false; this.update(); } }
+        });
+        body.append(cancel);
+      }
     }
     if (result) {
       const details = document.createElement("details");
@@ -344,7 +372,7 @@ return class Chat {
           if(!hero)throw new Error('Сначала создайте персонажа во вкладке персонажей.');
           this.retry.sessionCommand={revision:story.revision,character_id:hero,text};
         }
-        await env.request(`/api/rooms/${targetRoom}/session`,{method:'POST',body:JSON.stringify(this.retry.sessionCommand),headers:{'Idempotency-Key':this.retry.request_id},timeoutMs:90000});
+        await env.request(`/api/rooms/${targetRoom}/session`,{method:'POST',body:JSON.stringify(this.retry.sessionCommand),headers:{'Idempotency-Key':this.retry.request_id},timeoutMs:120000});
       }else await env.request(`/api/rooms/${targetRoom}/messages`, {
         method: "POST", body: JSON.stringify(this.retry),
       });

@@ -1,0 +1,139 @@
+{
+  "id": "watch-post",
+  "name": "Сигнал на заставе",
+  "description": "Второй тестовый сценарий: закрытый проход, сторож и пропавший сигнальный рожок.",
+  "start": "road",
+  "intro": "У заставы сторож просит найти сигнальный рожок. На мостки ведёт закрытая калитка. Рядом лежат инструменты.",
+  "world": {
+    "schema_version": 1,
+    "time": 0,
+    "places": {
+      "road": {
+        "name": "Дорога",
+        "description": "Сторож, ящик инструментов и закрытая калитка.",
+        "safe_rest": true,
+        "exits": [
+          {
+            "to": "bridge",
+            "door": "gate"
+          }
+        ]
+      },
+      "bridge": {
+        "name": "Мостки",
+        "description": "Деревянные мостки над рекой.",
+        "exits": [
+          {
+            "to": "road",
+            "door": "gate"
+          },
+          {
+            "to": "tower"
+          }
+        ]
+      },
+      "tower": {
+        "name": "Сторожевая башня",
+        "description": "Стол с сигнальным рожком.",
+        "exits": [
+          {
+            "to": "bridge"
+          }
+        ]
+      }
+    },
+    "entities": {
+      "warden": {
+        "kind": "npc",
+        "name": "Сторож",
+        "place": "road",
+        "attitude": "friendly",
+        "status": "standing",
+        "will": 6,
+        "deception": 4,
+        "skills": {
+          "athletics": 5
+        },
+        "ranks": {
+          "athletics": 1
+        },
+        "knowledge": [
+          "Рожок остался в башне.",
+          "Калитку заело после дождя."
+        ],
+        "goals": [
+          "Вернуть рожок."
+        ],
+        "services": {
+          "help": {
+            "name": "Помочь с калиткой",
+            "acceptable": true,
+            "skills": [
+              "athletics"
+            ],
+            "follow": false,
+            "dc": 12
+          }
+        },
+        "combat_group": "duel"
+      },
+      "gate": {
+        "kind": "container",
+        "name": "Калитка",
+        "place": "road",
+        "open": false,
+        "locked": true,
+        "force_dc": 18,
+        "lock": {
+          "dc": 15,
+          "required": 1,
+          "progress": 0
+        }
+      },
+      "horn": {
+        "kind": "item",
+        "name": "Сигнальный рожок",
+        "owner": "tower",
+        "item": {
+          "name": "Сигнальный рожок",
+          "category": "gear",
+          "bulk": "L"
+        }
+      },
+      "lever": {
+        "kind": "item",
+        "name": "Железный рычаг",
+        "owner": "road",
+        "item": {
+          "name": "Железный рычаг",
+          "category": "gear",
+          "bulk": "L",
+          "tags": [
+            "crowbar"
+          ]
+        }
+      },
+      "tools": {
+        "kind": "item",
+        "name": "Инструменты взломщика",
+        "owner": "road",
+        "item": {
+          "name": "Инструменты взломщика",
+          "category": "toolkit",
+          "bulk": "L",
+          "state": "worn",
+          "tags": [
+            "thieves_tools"
+          ]
+        }
+      }
+    },
+    "quests": {
+      "signal": {
+        "item": "horn",
+        "owner": "warden",
+        "text": "Сторож принимает рожок. На заставе снова можно подать сигнал."
+      }
+    }
+  }
+}

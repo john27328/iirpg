@@ -116,7 +116,7 @@ class InventoryRules:
     def item(self, payload: dict) -> dict:
         c = self.config
         fields(payload, {"name", "category", "bulk", "required_hands", "free_hands", "quantity",
-                         "state", "hands", "notes", "source_url"})
+                         "state", "hands", "notes", "source_url", "tags", "broken"})
         state = member(payload.get("state", c["default_state"]), c["states"], "Состояние")
         held = c["states"][state]["uses_hands"]
         bulk = payload.get("bulk", "—")
@@ -144,6 +144,11 @@ class InventoryRules:
             raise ValueError("В руки берётся один предмет. Разделите стопку на отдельные записи.")
         if item["required_hands"] + item["free_hands"] > c["hands"]:
             raise ValueError("Для использования требуется больше рук, чем есть у персонажа.")
+        tags = payload.get("tags", [])
+        if not isinstance(tags, list) or len(tags) > 12 or any(t not in ("crowbar", "thieves_tools") for t in tags) or type(payload.get("broken", False)) is not bool:
+            raise ValueError("Некорректные свойства инструмента.")
+        if tags: item["tags"] = sorted(set(tags))
+        if payload.get("broken"): item["broken"] = True
         return item
 
     def attribute_specs(self, sheet_rules: CharacterRules | None = None) -> dict:

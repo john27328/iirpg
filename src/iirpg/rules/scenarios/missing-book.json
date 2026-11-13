@@ -1,0 +1,219 @@
+{
+  "id": "missing-book",
+  "name": "Пропавшая дорожная книга",
+  "description": "Постоялый двор: разговоры, находки, проверки и возможная драка.",
+  "start": "hall",
+  "intro": "Вы входите в постоялый двор. Хозяйка просит найти пропавшую дорожную книгу. У лестницы грязные следы. Можно расспросить хозяйку, осмотреть кладовую или выйти во двор. Что вы делаете?",
+  "world": {
+    "schema_version": 1,
+    "time": 0,
+    "places": {
+      "hall": {
+        "name": "Зал постоялого двора",
+        "description": "Уютный зал, грязные следы у лестницы.",
+        "safe_rest": true,
+        "exits": [
+          {
+            "to": "store"
+          },
+          {
+            "to": "yard"
+          }
+        ]
+      },
+      "store": {
+        "name": "Кладовая",
+        "description": "Мешки муки, высокий стеллаж, верёвка и заклинивший сундук.",
+        "exits": [
+          {
+            "to": "hall"
+          }
+        ]
+      },
+      "yard": {
+        "name": "Двор",
+        "description": "Двор с навесом и стойлами.",
+        "exits": [
+          {
+            "to": "hall"
+          }
+        ]
+      }
+    },
+    "entities": {
+      "hostess": {
+        "kind": "npc",
+        "name": "Хозяйка",
+        "place": "hall",
+        "status": "standing",
+        "attitude": "friendly",
+        "will": 5,
+        "deception": 3,
+        "goals": [
+          "Вернуть дорожную книгу."
+        ],
+        "knowledge": [
+          "Книга принадлежит мне.",
+          "Грязные следы ведут к кладовой."
+        ],
+        "services": {},
+        "combat_group": "session_hostess"
+      },
+      "stablehand": {
+        "kind": "npc",
+        "name": "Конюх",
+        "place": "yard",
+        "status": "standing",
+        "attitude": "indifferent",
+        "will": 3,
+        "deception": 2,
+        "skills": {
+          "athletics": 3
+        },
+        "ranks": {
+          "athletics": 1
+        },
+        "goals": [
+          "Не попасть под подозрение.",
+          "Избежать драки."
+        ],
+        "knowledge": [
+          "Я видел, как дорожную книгу спрятали в кладовой."
+        ],
+        "services": {
+          "help": {
+            "name": "Помочь физической работой",
+            "acceptable": true,
+            "skills": [
+              "athletics"
+            ],
+            "follow": true,
+            "dc": 15
+          }
+        },
+        "combat_group": "session_stablehand"
+      },
+      "chest": {
+        "kind": "container",
+        "name": "Заклинивший сундук",
+        "place": "store",
+        "open": false,
+        "locked": true,
+        "force_dc": 15,
+        "lock": {
+          "dc": 20,
+          "required": 2,
+          "progress": 0
+        },
+        "description": "Край дорожной книги виден у крышки. Можно выломать крышку или вскрыть замок."
+      },
+      "rope": {
+        "kind": "item",
+        "name": "Верёвка из кладовой",
+        "owner": "store",
+        "item": {
+          "name": "Верёвка из кладовой",
+          "category": "gear",
+          "bulk": "L",
+          "notes": "Авторский предмет тестового сценария."
+        }
+      },
+      "book": {
+        "kind": "item",
+        "name": "Дорожная книга",
+        "owner": "chest",
+        "item": {
+          "name": "Дорожная книга",
+          "category": "gear",
+          "bulk": "L",
+          "notes": "Сюжетный предмет: дорожная книга хозяйки постоялого двора."
+        }
+      },
+      "stablehand_coins": {
+        "kind": "currency",
+        "name": "5 медных монет",
+        "owner": "stablehand",
+        "amount": 5
+      },
+      "crowbar": {
+        "kind": "item",
+        "name": "Лом",
+        "owner": "store",
+        "item": {
+          "name": "Лом",
+          "category": "gear",
+          "bulk": "L",
+          "tags": [
+            "crowbar"
+          ]
+        }
+      },
+      "lockpicks": {
+        "kind": "item",
+        "name": "Набор взломщика",
+        "owner": "store",
+        "item": {
+          "name": "Набор взломщика",
+          "category": "toolkit",
+          "bulk": "L",
+          "state": "worn",
+          "tags": [
+            "thieves_tools"
+          ]
+        }
+      }
+    },
+    "quests": {
+      "return_book": {
+        "item": "book",
+        "owner": "hostess",
+        "text": "Хозяйка принимает дорожную книгу и благодарит вас."
+      }
+    }
+  },
+  "legacy": {
+    "item_owner": {
+      "book": {
+        "collected": "book",
+        "recovered_flag": "book",
+        "returned_flag": "completed",
+        "recipient": "hostess"
+      }
+    },
+    "check_targets": {
+      "book": {
+        "athletics": "chest",
+        "thievery": "chest"
+      },
+      "help_chest": {
+        "diplomacy": "stablehand"
+      }
+    },
+    "open_with_recovered": [
+      "chest"
+    ],
+    "pending_checks": {
+      "book": {
+        "success": [
+          {
+            "type": "open",
+            "target": "chest"
+          },
+          {
+            "type": "take",
+            "target": "book"
+          }
+        ]
+      },
+      "help_chest": {
+        "success": [
+          {
+            "type": "agreement",
+            "target": "stablehand",
+            "service": "help"
+          }
+        ]
+      }
+    }
+  }
+}

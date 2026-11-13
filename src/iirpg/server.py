@@ -190,6 +190,10 @@ class ChatHandler(BaseHTTPRequestHandler):
         if method == 'GET' and route.path == '/api/combat/presets':
             self._json(200, {'presets': self.server.combat.presets})
             return
+        cancel_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/session/cancel', route.path)
+        if method == 'POST' and cancel_match:
+            self._json(200, self.server.adventure.cancel(cancel_match.group(1), self._body().get('offer_id','')))
+            return
         reaction_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/session/react', route.path)
         if method == 'POST' and reaction_match:
             self._json(200, self.server.adventure.react(reaction_match.group(1), self._body().get('offer_id','')))

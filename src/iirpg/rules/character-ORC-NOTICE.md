@@ -100,14 +100,18 @@ Session encounter profiles (`session_stablehand`, `session_hostess`) are
 IIRPG-authored nonlethal prototype examples. Their numeric statistics and
 unarmed damage are scenario parameters, not reproduced published NPC blocks.
 
-`adventure_items.json` contains IIRPG-authored story props and illustrative
-inventory parameters, not copied official equipment stat blocks.
+`rules/scenarios/*.json` contains IIRPG-authored story props, NPCs, places and
+illustrative difficulties, not published creature or equipment stat blocks.
 
-`adventure_support.json` and `adventure_support.py` adapt Aid (Player Core 2023,
-p. 416, https://2e.aonprd.com/Actions.aspx?ID=2292), using the stored rules in
-`data/pathfinder2e-remaster/rules/playing-the-game.md`. The NPC's trained
-Athletics modifier and the Diplomacy activity to enlist this particular helper
-are authored scenario parameters, not a full implementation of social encounters.
+`actions_pf2e.json` and `action_rules.py` adapt Player Core (2023) Interact,
+Aid, Force Open, Pick a Lock, Make an Impression, Request, Coerce, Sense Motive
+and Seek, with references to the stored source rules and primary source URLs.
+GM Core (2023) adjudication guidance informed the bounded action-plan design.
+Source pages and limitations are recorded in `docs/general-action-rules.md`,
+`docs/gm-session.md` and `data/pathfinder2e-remaster/rules/adjudication-reference.md`.
+Checked November 13, 2026. These adaptations are Licensed Material under ORC;
+IIRPG authors supplied Russian labels, example content and implementation code.
+They are not a complete implementation of the cited rules.
 
 `progression_pf2e.json`, `progression.py` and `magic.py` adapt Player Core
 (2023) class, general feat and spell mechanics. Checked November 13, 2026;

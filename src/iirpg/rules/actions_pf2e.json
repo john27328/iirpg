@@ -1,0 +1,174 @@
+{
+  "edition": "Pathfinder Second Edition Remaster",
+  "license": "ORC",
+  "notice": "character-ORC-NOTICE.md",
+  "scope": "Prototype profiles; see docs/general-action-rules.md for limits.",
+  "actions": {
+    "move": {
+      "summary": "Перейти в место или к сущности по открытым проходам.",
+      "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2340",
+      "local_source": "data/pathfinder2e-remaster/rules/playing-the-game.md",
+      "required_fields": [
+        "target"
+      ]
+    },
+    "look": {
+      "summary": "Осмотреть доступную обстановку без броска; скрытое требует Seek.",
+      "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2498",
+      "local_source": "data/pathfinder2e-remaster/rules/playing-the-game.md",
+      "required_fields": []
+    },
+    "open": {
+      "summary": "Interact: открыть незапертый контейнер, 1 действие.",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2297",
+      "required_fields": [
+        "target"
+      ]
+    },
+    "take": {
+      "summary": "Interact: взять существующий доступный предмет, 1 действие, свободная рука.",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2297",
+      "required_fields": [
+        "target"
+      ]
+    },
+    "give": {
+      "summary": "Interact: передать принадлежащую герою вещь присутствующему NPC; recipient обязателен.",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2297",
+      "required_fields": [
+        "target",
+        "recipient"
+      ]
+    },
+    "force_open": {
+      "skill": "athletics",
+      "seconds": 2,
+      "summary": "Force Open: Атлетика против КС препятствия; без лома −2, критпровал заклинивает (−2).",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2375",
+      "required_fields": [
+        "target"
+      ],
+      "label": "Выломать"
+    },
+    "pick_lock": {
+      "skill": "thievery",
+      "seconds": 4,
+      "summary": "Pick a Lock: trained Воровство, набор взломщика, КС/прогресс замка; критуспех +2, успех +1, критпровал ломает инструменты.",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2412",
+      "required_fields": [
+        "target"
+      ],
+      "label": "Вскрыть замок"
+    },
+    "make_impression": {
+      "skill": "diplomacy",
+      "seconds": 60,
+      "summary": "Make an Impression: минута разговора, Diplomacy vs Will DC; отношение +2/+1/0/−1 к этому герою.",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2392",
+      "stop_after_check": true,
+      "required_fields": [
+        "target"
+      ],
+      "label": "Расположить к себе"
+    },
+    "request": {
+      "skill": "diplomacy",
+      "seconds": 2,
+      "summary": "Request: friendly/helpful NPC, приемлемая услуга из services, service обязателен; успех согласие, критпровал отношение −1.",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2393",
+      "stop_after_check": true,
+      "required_fields": [
+        "target",
+        "service"
+      ],
+      "label": "Просьба"
+    },
+    "coerce": {
+      "skill": "intimidation",
+      "seconds": 60,
+      "summary": "Coerce: минута угроз, Will DC, service; согласие на приемлемую невредящую услугу на сутки; критпровал иммунитет неделю.",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2394",
+      "stop_after_check": true,
+      "required_fields": [
+        "target",
+        "service"
+      ],
+      "label": "Принуждение"
+    },
+    "sense_motive": {
+      "skill": "perception",
+      "seconds": 2,
+      "summary": "Sense Motive: Perception vs Deception DC, Secret (герой бросает по разрешению GM). Не читает мысли; повтор после значимого изменения.",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2302",
+      "required_fields": [
+        "target"
+      ],
+      "label": "Оценить намерения"
+    },
+    "seek": {
+      "skill": "perception",
+      "seconds": 2,
+      "summary": "Seek: обнаружить скрытую сущность в текущем месте против её detection_dc.",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2301",
+      "required_fields": [
+        "target"
+      ],
+      "label": "Поиск"
+    },
+    "aid": {
+      "summary": "Подготовить помощь согласившегося NPC: target=NPC, task=цель будущей проверки, skill; расходуется на один бросок.",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2292",
+      "required_fields": [
+        "target",
+        "task",
+        "skill"
+      ]
+    },
+    "combat": {
+      "summary": "Начать столкновение с присутствующим NPC; сначала инициатива, без бесплатного попадания.",
+      "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2498",
+      "local_source": "data/pathfinder2e-remaster/rules/playing-the-game.md",
+      "required_fields": [
+        "target"
+      ]
+    },
+    "cast": {
+      "summary": "Применить ability из character_build.spells. Боевая магия требует цели и инициативы.",
+      "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2498",
+      "local_source": "data/pathfinder2e-remaster/rules/playing-the-game.md",
+      "required_fields": [
+        "ability"
+      ]
+    },
+    "rest": {
+      "summary": "Отдых и дневная подготовка в безопасном месте, 24 часа.",
+      "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2498",
+      "local_source": "data/pathfinder2e-remaster/rules/playing-the-game.md",
+      "required_fields": []
+    },
+    "improvise": {
+      "summary": "Необычный способ преодолеть препятствие: только target.affordances[method], skill и эффекты заданы сценарием; иначе уточнение мастера.",
+      "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2498",
+      "local_source": "data/pathfinder2e-remaster/rules/playing-the-game.md",
+      "required_fields": [
+        "target",
+        "method"
+      ],
+      "label": "Необычный способ"
+    },
+    "stow": {
+      "summary": "Interact: убрать свою вещь, освободив руки. target из inventory/world.",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2297",
+      "required_fields": [
+        "target"
+      ]
+    },
+    "hold": {
+      "summary": "Interact: взять свою вещь в руки, если хватает рук. target из inventory/world.",
+      "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2297",
+      "required_fields": [
+        "target"
+      ]
+    }
+  }
+}

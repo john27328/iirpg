@@ -3,7 +3,7 @@ import json
 
 
 def save_character(connection, room: str, actor: dict) -> None:
-    body = {k: v for k, v in actor.items() if k not in ('id', 'items', 'summary', 'sheet_statistics', 'progression')}
+    body = {k: v for k, v in actor.items() if k not in ('id', 'items', 'summary', 'sheet_statistics', 'progression', 'stats', 'ranks', 'abilities')}
     connection.execute('UPDATE characters SET body=? WHERE room_id=? AND id=?',
                        (json.dumps(body, ensure_ascii=False), room, actor['id']))
     connection.execute('UPDATE room_rosters SET revision=revision+1 WHERE room_id=?', (room,))

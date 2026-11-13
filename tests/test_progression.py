@@ -146,7 +146,7 @@ class ProgressionTests(unittest.TestCase):
             def ready(self):return True
             def complete(client,payload,timeout):
                 client.calls.append(json.loads(payload['messages'][1]['content']))
-                return {'content':json.dumps({'narration':'Пробуете выполнить замысел.','action':client.action,'destination':'','location_after':'hall','skill':'','objective':client.objective})}
+                return {'content':json.dumps({'intent':'act','reply':'','steps':[{'rule':client.action, **({'ability':client.objective} if client.action=='cast' else {})}]})}
         client=Client(); return AdventureStore(AIService(self.combat,self.scene,load_config(),client)),client
 
     def say(self,session,text='Создаю свет',key=None):
@@ -183,7 +183,7 @@ class ProgressionTests(unittest.TestCase):
         with self.store._connection() as c:
             c.execute('INSERT INTO adventures VALUES(?,?) ON CONFLICT(room_id) DO UPDATE SET body=excluded.body',(self.room,json.dumps(state)))
         client.action='rest';client.objective=''
-        with self.assertRaisesRegex(ValueError,'Для отдыха'):self.say(session,'Отдыхаю')
+        self.assertIn('небезопасно', self.say(session,'Отдыхаю')['history'][-1]['gm'])
         self.build('wizard')
         self.assertEqual(self.hero()['sheet']['values']['hp_current'],8)
         self.assertEqual(session.read(self.room)['hero_hp'],8)
@@ -198,5 +198,5 @@ class ProgressionTests(unittest.TestCase):
 
     def test_non_caster_cannot_get_magic_from_model(self):
         self.build('fighter'); session,client=self.session()
-        with self.assertRaisesRegex(ValueError,'недоступно'): self.say(session)
+        self.assertIn('способности нет', self.say(session)['history'][-1]['gm'])
         self.assertFalse(self.hero()['build']['light'])
