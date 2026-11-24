@@ -473,7 +473,7 @@ async function showGames(){
   const data=await request('/api/games');
   if(identity.role!=='player'){await heroes.refresh();await multiplayer.refresh();}
   $('#game-save').disabled=!ready||gameLocked();
-  $('#game-scenario').replaceChildren(...data.scenarios.map(s=>new Option(s.name,s.id)));
+  $('#game-scenario').replaceChildren(...(data.campaigns||[]).map(c=>new Option(c.name+' · кампания','campaign:'+c.id)),...data.scenarios.map(s=>new Option(s.name,s.id)));
   $('#games-list').replaceChildren(...data.games.map(game=>{
    const row=document.createElement('article');row.className='saved-game';
    const title=document.createElement('strong');title.textContent=game.name+(game.room_id===room?' · текущая':'');
@@ -512,4 +512,4 @@ async function runGame(command){
 }
 $('#games-toggle')?.addEventListener('click',()=>{$('#games-menu').hidden=!$('#games-menu').hidden;if(!$('#games-menu').hidden){$('#combat-frame').contentWindow?.postMessage({type:'pause-for-game-menu'},location.origin);showGames();}});
 $('#game-save')?.addEventListener('click',()=>{if(ready)runGame({action:'save',room_id:room});});
-$('#game-create')?.addEventListener('submit',e=>{e.preventDefault();runGame({action:'create',name:$('#game-name').value,scenario:$('#game-scenario').value,hero_id:$('#game-hero').value,...(multiplayer.party()?{party:multiplayer.party()}:{})});});
+$('#game-create')?.addEventListener('submit',e=>{e.preventDefault();runGame({action:'create',name:$('#game-name').value,...($('#game-scenario').value.startsWith('campaign:')?{campaign:$('#game-scenario').value.slice(9)}:{scenario:$('#game-scenario').value}),hero_id:$('#game-hero').value,...(multiplayer.party()?{party:multiplayer.party()}:{})});});

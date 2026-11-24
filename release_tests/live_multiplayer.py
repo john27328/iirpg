@@ -44,7 +44,7 @@ class Playtest:
                 'State invariants and manual dialogue review are separate.',
                 'All credentials and games are evaluation-only.']}
         self.report['source_hashes'] = {name: hashlib.sha256((Path('src/iirpg') / name).read_bytes()).hexdigest()
-            for name in ('adventure.py', 'action_rules.py', 'session_context.py', 'story_narration.py', 'story_memory.py', 'trade.py', 'rules/scenarios/crossroads.json')}
+            for name in ('adventure.py', 'action_rules.py', 'session_context.py', 'story_narration.py', 'story_memory.py', 'trade.py', 'campaign.py', 'campaign_storage.py', 'rules/campaigns/river-marches.json', 'rules/scenarios/crossroads.json')}
         self.heroes = self.server.games.heroes.list()['heroes']
 
     def close(self) -> None:
@@ -76,8 +76,8 @@ class Playtest:
         with response:
             return response.status, json.load(response)
 
-    def start(self, name: str, scenario: str = 'missing-book', templates: tuple[int, int] = (0, 1)) -> None:
-        status, game = self.request('/api/games', {'action': 'create', 'scenario': scenario,
+    def start(self, name: str, scenario: str = 'missing-book', templates: tuple[int, int] = (0, 1), *, region: str | None = None) -> None:
+        status, game = self.request('/api/games', {'action': 'create', **({'campaign': region} if region else {'scenario': scenario}),
             'name': 'Живой тест вдвоём: ' + name, 'party': [
                 {'name': player, 'hero_id': self.heroes[index]['id']}
                 for player, index in zip(('Алина', 'Борис'), templates)]})
@@ -290,6 +290,33 @@ class Playtest:
         self.turn(0, 'Теперь явно отдаю хозяйке дорожную книгу, которую мне передала спутница.')
         self.check('quest completes after owner gives book', self.state()['world']['quests']['return_book'].get('completed', False))
         self.turn(1, 'Хозяйка, кто именно передал тебе книгу, а кто вскрыл замок?')
+
+    def campaign_journey(self) -> None:
+        self.start('campaign_journey', region='river-marches')
+        self.turn(0, 'Мы с Лирой выходим с площади на высокий берег реки. Хотим посмотреть на паром и мост своими глазами.')
+        state = self.state()
+        self.check('river intent reaches river instead of archive', state['location'] == 'riverbank')
+        self.check('first visit creates persistent scene', 'riverbank' in state['campaign']['scene_refs'])
+        if state['location'] != 'riverbank':return
+        before = deepcopy(state['world']['places']['riverbank'])
+        people = {k:v['name'] for k,v in state['world']['entities'].items() if v['kind']=='npc' and v.get('place')=='riverbank'}
+        self.turn(1, 'Что мы видим у берега? По каким ориентирам отличить дорогу к старому парому от дороги к новому мосту?')
+        status, _ = self.request('/api/games', {'action':'save','room_id':self.room})
+        self.check('campaign checkpoint saved', status == 200)
+        self.turn(0, 'Возвращаюсь на рыночную площадь к Маре.')
+        self.turn(1, 'Снова идём на высокий берег реки.')
+        self.check('revisit keeps scene and people unchanged', self.state()['world']['places']['riverbank'] == before and all(self.state()['world']['entities'][k]['name']==v for k,v in people.items()))
+        self.turn(1, 'Исследую старую лодочную в окрестностях этого высокого берега и иду туда.')
+        local = self.state()['location']
+        self.check('new local site is generated inside campaign', local.startswith('site_') and self.state()['world']['places'][local].get('parent')=='riverbank')
+        self.turn(0, 'Возвращаюсь на высокий берег реки, затем иду к старому парому.')
+        self.check('another main point becomes real without authored scene', self.state()['location']=='old_ferry' and 'old_ferry' in self.state()['campaign']['scene_refs'])
+        self.check('new exploration keeps wallets unchanged', [self.hero(i)['coins'] for i in range(2)]==[300,300])
+        status, _ = self.request('/api/games', {'action':'load','room_id':self.room})
+        self.check('load restores earlier campaign branch', status == 200 and self.state()['location']=='riverbank' and local not in self.state()['world']['places'] and 'old_ferry' not in self.state()['campaign']['scene_refs'])
+        with self.server.service.store._connection() as c:
+            count = c.execute("SELECT COUNT(*) FROM ai_requests WHERE room_id=? AND json_extract(body,'$.role')='campaign_generation'",(self.room,)).fetchone()[0]
+        self.check('three scenes created with at most one correction each', 3 <= count <= 6, count)
 
     def specialist_boundaries(self) -> None:
         self.start('specialist_boundaries', 'crossroads')
@@ -551,7 +578,7 @@ class Playtest:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--live', action='store_true', required=True)
-    cases = ('identity', 'pending', 'relations', 'loot', 'branch', 'combat', 'cooperation', 'aid_decline', 'cooperation_crafting', 'market', 'specialists', 'merchant_voice', 'specialist_boundaries')
+    cases = ('identity', 'pending', 'relations', 'loot', 'branch', 'combat', 'cooperation', 'aid_decline', 'cooperation_crafting', 'market', 'specialists', 'merchant_voice', 'specialist_boundaries', 'campaign_journey')
     parser.add_argument('--case', nargs='+', choices=[*cases, 'all'], default=['all'])
     parser.add_argument('--model')
     parser.add_argument('--max-requests', type=int, default=240)

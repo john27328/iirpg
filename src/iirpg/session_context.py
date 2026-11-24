@@ -4,6 +4,7 @@ from .world import public_view, location
 from .action_rules import RULES, attitude, prepare
 from .progression import describe
 from .party import members
+from .campaign import scoped_world
 from .story_memory import dialogue
 
 PROMPT = '''Ты ведущий настольной RPG на русском языке. Ты играешь NPC и описываешь мир.
@@ -34,6 +35,12 @@ clarify = действительно неясная цель или способ
 act = только явно заявленные действия, в порядке игрока, из rule_catalog. reply до 5 предложений без результата попытки.
 Каждый шаг содержит 8 строк: rule,target,recipient,service,task,skill,ability,method; неиспользуемые = "".
 Используй только ID из entities/entity_index/inventory/places, без переводов и придуманных ссылок.
+Если есть campaign: это постоянный мир выше отдельного сценария. bounds и facts не меняются от реплик.
+Неисследованные главные точки уже есть в places: move к ним создаст сцену при первом посещении.
+Для нового небольшого места в окрестностях ТЕКУЩЕЙ точки региона используй explore(target=текущее место, method=короткое название).
+Это создаст и сохранит место внутри границ региона, затем переведёт туда группу. Другая главная точка — move, не explore.
+Не подменяй неизвестный берег архивом, храмом или ближайшим допустимым ID. Если смысл неясен — clarify.
+Речь NPC не создаёт новую сущность сама по себе; новое место станет фактом через исследование.
 Составную заявку включай целиком: move, force_open, take — разные шаги. Движок сам остановится на броске.
 Не добавляй приготовления и действия «на всякий случай». Разговор НЕ требует убирать оружие или щит.
 Явное «иду в X и делаю Y» = move(X), Y, без повторного разрешения. После move цель уже будет рядом.
@@ -92,6 +99,9 @@ PLANNER_PROMPT = '''Ты разбираешь последнюю заявку и
 Сначала определи, что игрок явно делает. Не подменяй попытку действия ответом или отказом персонажа.
 Если он пытается расположить к себе — make_impression; просит содействия — request;
 угрожает — coerce; идёт и делает — оба шага; применяет способность — cast даже если она недоступна.
+Если есть campaign и игрок исследует новое небольшое место рядом с текущей точкой региона,
+это explore с target=location_id, method=название, даже если этого места ещё нет в places.
+«Исследую старую лодочную у этого берега и иду туда» = explore, а не уточнение и не переход к другому известному месту.
 Исключение: если просьба прямо противоречит явно заданной принципиальной границе в personality.boundaries,
 например подделать запись или раскрыть чужую тайну, верни question, voice=npc, steps=[] и interlocutor=этот NPC.
 Это содержательный отказ без броска; friendly/helpful не отменяет принципов. Не придумывай новые границы для обычной просьбы.
@@ -111,7 +121,7 @@ reply читает игрок: пиши обычным русским языко
 
 def context(state: dict, actor: dict, text: str, reaction: bool = False) -> dict:
     from .trade import trade_view
-    world = state['world']; place = state['location']
+    world = scoped_world(state,text); place = state['location']
     party_ids=set(members(state))
     npcs = {key: {**{k: deepcopy(v) for k, v in value.items() if k in ('name', 'role', 'knowledge', 'goals', 'status', 'agreements', 'commitments', 'coerce_immunity', 'memories', 'personality')}, 'attitude_to_hero': attitude(value, actor['id'])}
             for key, value in world['entities'].items() if value['kind'] == 'npc' and location(world, key) == place}
@@ -160,15 +170,17 @@ def context(state: dict, actor: dict, text: str, reaction: bool = False) -> dict
             'history': recent, 'recollections': recalled, 'pending_check': pending,
             'prepared_aid': deepcopy(world.get('aid', {})),
             'trade': trade_view(world, actor),
+            **({'campaign':{k:deepcopy(state['campaign'][k]) for k in ('name','premise','bounds','facts','episodes')}} if state.get('campaign') else {}),
             'plan': {k: v for k, v in state.get('plan', {}).items() if k in ('status', 'reason', 'original_text', 'index')}, 'rule_catalog': {key: {k: v for k, v in spec.items() if k in ('summary', 'skill', 'seconds', 'required_fields')} for key, spec in RULES.items()},
             'phase': 'AFTER_ROLL' if reaction else 'PLAYER_TURN',
             'last_check_resolution': resolution,
             'confirmed_results': [{k:deepcopy(v) for k,v in h.items() if k in ('player','gm','check','action','rule','target','actor_name','character_id','effects')} for h in state['history'][-2:]] if reaction else []}
 
 
-def schema(state: dict) -> dict:
-    entities = state['world']['entities']
-    refs = ['', *entities, *state['world']['places']]
+def schema(state: dict, text: str = '') -> dict:
+    visible = scoped_world(state,text)
+    entities = visible['entities']
+    refs = ['', *entities, *visible['places']]
     properties = {}
     for key in ('rule', 'target', 'recipient', 'service', 'task', 'skill', 'ability', 'method'):
         choices = list(RULES) if key == 'rule' else refs if key in ('target', 'recipient', 'task') else None

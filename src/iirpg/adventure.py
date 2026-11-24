@@ -15,7 +15,7 @@ from .progression import rest
 from .magic import utility
 from .maps import install_map
 from .story_memory import MAX_STORY_ENTRIES, fit_context
-from . import story_narration
+from . import story_narration, campaign, campaign_storage
 from .ai import session_reasoning
 from .party import members, acting_character
 from .roster import InventoryRules
@@ -31,6 +31,7 @@ class AdventureStore:
     def __init__(self, ai):
         self.ai, self.store = ai, ai.store
         with self.store._connection() as c:
+            campaign_storage.install(c)
             c.executescript('CREATE TABLE IF NOT EXISTS adventures(room_id TEXT PRIMARY KEY,body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS adventure_requests(room_id TEXT,request_id TEXT,command TEXT,body TEXT,PRIMARY KEY(room_id,request_id)); CREATE TABLE IF NOT EXISTS session_training_archive(room_id TEXT,encounter_id TEXT,body TEXT,PRIMARY KEY(room_id,encounter_id));')
 
     def publish(self,c,room,state):
@@ -83,7 +84,8 @@ class AdventureStore:
         key=str(uuid5(UUID(offer_id),'session.reaction'+(':'+state['timeline_id'] if state.get('timeline_id') else '')))
         with self.store._connection() as c:
             prior=c.execute('SELECT body FROM adventure_requests WHERE room_id=? AND request_id=?',(room,key)).fetchone()
-        if prior and json.loads(prior[0]).get('status')=='done':return json.loads(prior[0])['result']
+        if prior and json.loads(prior[0]).get('status')=='done':
+            with self.store._connection() as c:return campaign_storage.thaw_result(c,json.loads(prior[0])['result'])
         latest=next((h for h in reversed(state['history']) if h.get('action')=='check_result'),{})
         if latest.get('offer_id')!=offer_id:raise ValueError('Это не последняя проверка сессии.')
         if state.get('active_combat'): return state
@@ -100,12 +102,13 @@ class AdventureStore:
     def _load(self, c, room):
         self.store._require_room(c, room)
         row = c.execute('SELECT body FROM adventures WHERE room_id=?', (room,)).fetchone()
-        return json.loads(row[0]) if row else {'revision': 0, 'location': 'hall', 'history': [], 'character_id': None}
+        return campaign_storage.hydrate(c, json.loads(row[0])) if row else {'revision': 0, 'location': 'hall', 'history': [], 'character_id': None}
 
     def save(self, c, room, state):
         compatibility_view(state)
+        campaign_storage.archive(c, state)
         c.execute('INSERT INTO adventures VALUES(?,?) ON CONFLICT(room_id) DO UPDATE SET body=excluded.body',
-                  (room, json.dumps(state, ensure_ascii=False)))
+                  (room, json.dumps(campaign_storage.pack(c, state), ensure_ascii=False)))
 
     def sync_inventory(self, c, room, state):
         sync_inventory(c, room, state, self.ai.combat.roster._load(c, room))
@@ -508,6 +511,11 @@ class AdventureStore:
             return None
         try:
             request = story_narration.payload(state, actor, self.ai.config)
+            if state.get('campaign'):
+                data = json.loads(request['messages'][1]['content'])
+                partner = (data.get('conversation_partner') or {}).get('id')
+                data['recollections'] = campaign_storage.recall(c,state,state['history'][-1]['player'],actor['id'],partner) + data['recollections']
+                request['messages'][1]['content'] = json.dumps(fit_context(data,self.ai.config.get('session_context_max_bytes',48000)),ensure_ascii=False)
         except ValueError:
             return None
         narration_key = str(uuid5(UUID(key), 'session.narration'))
@@ -546,11 +554,12 @@ class AdventureStore:
                 self.save(c, room, state)
                 self.publish(c, room, state)
                 result = self.view(state)
+                stored_result = campaign_storage.freeze_result(c, result)
                 c.execute('UPDATE adventure_requests SET body=? WHERE room_id=? AND request_id=?',
-                          (json.dumps({'status': 'done', 'result': result}, ensure_ascii=False), room, trace['parent_request_id']))
+                          (json.dumps({'status': 'done', 'result': stored_result}, ensure_ascii=False), room, trace['parent_request_id']))
                 parent = json.loads(c.execute('SELECT body FROM ai_requests WHERE room_id=? AND request_id=?',
                                              (room, trace['parent_request_id'])).fetchone()[0])
-                parent.update(result=result, narration_request_id=trace['request_id'])
+                parent.update(result=stored_result, narration_request_id=trace['request_id'])
                 c.execute('UPDATE ai_requests SET body=? WHERE room_id=? AND request_id=?',
                           (json.dumps(parent, ensure_ascii=False), room, trace['parent_request_id']))
                 trace.update(status='completed')
@@ -562,6 +571,46 @@ class AdventureStore:
                 c.execute('UPDATE ai_requests SET body=? WHERE room_id=? AND request_id=?',
                           (json.dumps(trace, ensure_ascii=False), room, trace['request_id']))
         return result
+
+    def materialize_campaign(self, room: str, key: str, state: dict, proposal: dict, text: str, actor_id: str) -> tuple[dict, dict, list[tuple[str, dict]]]:
+        if not state.get('campaign') or state.get('pending_check'):
+            return state, proposal, []
+        trial, proposal, needed = campaign.creation_plan(state, proposal)
+        additions = []
+        for place_id in needed:
+            request = campaign.generation_payload(trial,place_id,text,self.ai.config)
+            for attempt in range(2):
+                generation_key = str(uuid5(UUID(key),'campaign.scene:'+place_id+':'+str(attempt)))
+                now = time.time()
+                trace = {'request_id':generation_key,'parent_request_id':key,'role':'campaign_generation',
+                         'status':'running','started':now,'request':deepcopy(request),'place_id':place_id,'attempt':attempt}
+                with self.store._connection() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    if self._load(c,room)['revision'] != state['revision']:raise MessageConflict('Мир изменился во время подготовки места.')
+                    used = c.execute("SELECT (SELECT COUNT(*) FROM ai_requests WHERE date(started,'unixepoch')=date(?,'unixepoch'))+COALESCE((SELECT count FROM ai_deleted_usage WHERE day=date(?,'unixepoch')),0)",(now,now)).fetchone()[0]
+                    if used >= self.ai.config['daily_request_limit']:raise ValueError('Достигнут дневной лимит ИИ; новое место не создано.')
+                    c.execute('INSERT INTO ai_requests VALUES(?,?,?,?,?)',(room,generation_key,json.dumps({'character_id':actor_id}),now,json.dumps(trace,ensure_ascii=False)))
+                started = time.monotonic(); response = None; repair = None
+                try:
+                    response = self.ai.client.complete(request,self.ai.config['timeout_seconds'])
+                    trace['response'] = response
+                    addition = campaign.scene(trial['world'],place_id,json.loads(response['content']))
+                    trial['world']['places'].update(addition['places']);trial['world']['entities'].update(addition['entities'])
+                    additions.append((place_id,addition));trace['status'] = 'completed'
+                except (ValueError,KeyError,TypeError) as error:
+                    trace.update(status='failed',error=str(error))
+                    if response is not None and attempt == 0:
+                        repair = str(error)
+                    else:
+                        raise ValueError('Не удалось создать новое место: '+str(error)) from None
+                finally:
+                    trace['duration_ms'] = round((time.monotonic()-started)*1000)
+                    with self.store._connection() as c:
+                        c.execute('UPDATE ai_requests SET body=? WHERE room_id=? AND request_id=?',(json.dumps(trace,ensure_ascii=False),room,generation_key))
+                if repair is None:break
+                request['messages'].extend([{'role':'assistant','content':response.get('content','')},
+                    {'role':'user','content':'Сцена отклонена проверкой: '+repair+' Исправь её и верни весь JSON по прежней схеме. Мир ещё не изменён.'}])
+        return trial, proposal, additions
 
     def execute(self, room: str, command: dict, key: str, *, reaction: bool = False) -> dict:
         try: UUID(key)
@@ -578,7 +627,7 @@ class AdventureStore:
             if prior:
                 if prior[0] != encoded: raise MessageConflict('UUID уже использован.')
                 saved = json.loads(prior[1])
-                if saved['status'] == 'done': return saved['result']
+                if saved['status'] == 'done': return campaign_storage.thaw_result(c,saved['result'])
                 raise ValueError('Запрос уже отправлен. Обновите историю; автоматического повтора нет.')
             if state.get('active_combat'): raise ValueError('Идёт бой. Откройте боевой экран.')
             if state['revision'] != command['revision']: raise MessageConflict('История изменилась. Обновите страницу.')
@@ -596,6 +645,8 @@ class AdventureStore:
                 raise MessageConflict('Другой запрос ИИ ещё выполняется.')
             if c.execute('SELECT 1 FROM ai_requests WHERE room_id=? AND request_id=?', (room, key)).fetchone(): raise MessageConflict('UUID уже использован другим запросом ИИ.')
             prompt_context = context(state, actor, text, reaction)
+            old = campaign_storage.recall(c,state,text,actor['id'])
+            prompt_context['recollections'] = old + prompt_context['recollections']
             recent = c.execute("""SELECT envelope FROM queue_events WHERE room_id=?
                 AND json_extract(envelope,'$.type')='chat.message'
                 AND json_extract(envelope,'$.metadata.session_revision') IS NULL
@@ -614,7 +665,7 @@ class AdventureStore:
                        'max_tokens': 4096 if self.ai.config.get('session_reasoning') else 1800, 'temperature': 0.2,
                        'reasoning': session_reasoning(self.ai.config),
                        'provider': {'max_price': {'prompt': 0, 'completion': 0}},
-                       'response_format': {'type': 'json_schema', 'json_schema': {'name': 'action_plan', 'strict': True, 'schema': schema(state)}}}
+                       'response_format': {'type': 'json_schema', 'json_schema': {'name': 'action_plan', 'strict': True, 'schema': schema(state, text)}}}
             trace = {'status': 'running', 'role': 'session_gm', 'started': now, 'request': payload}
             if not reaction: self.event(c, room, str(uuid5(UUID(key), 'session.player')), 'first', text, {'client_request_id': key,'character_id':actor['id'],'actor_name':actor['name'],'player_id':actor.get('player_id'),'player_name':next((p['name'] for p in roster['players'] if p['id']==actor.get('player_id')),None)})
             self.save(c, room, initial)
@@ -629,6 +680,7 @@ class AdventureStore:
                 proposal = self.repair_repetition(room, key, payload, proposal)
                 trace['semantic_repair_checked'] = True
             if reaction and (proposal['intent'] != 'question' or proposal['steps']): raise ValueError('Реакция не должна назначать новое действие.')
+            trial, proposal, additions = self.materialize_campaign(room,key,state,proposal,text,actor['id'])
             with self.store._connection() as c:
                 c.execute('BEGIN IMMEDIATE'); current = self._load(c, room)
                 if current['revision'] != state['revision']: raise MessageConflict('Сессия изменилась; ответ не применён.')
@@ -637,6 +689,10 @@ class AdventureStore:
                 actor, roster = self.actor(c, room, command.get('character_id'))
                 initialize(state, actor)
                 self.sync_inventory(c, room, state)
+                if additions:
+                    campaign.merge(state,trial,additions)
+                    for place_id, addition in additions:
+                        state['campaign']['scene_refs'][place_id] = campaign_storage.put(c,'scene',addition)
                 interlocutor = proposal.get('interlocutor')
                 if interlocutor:
                     npc = state['world']['entities'].get(interlocutor, {})
@@ -671,8 +727,9 @@ class AdventureStore:
                 state['history'] = (state['history'] + [entry])[-MAX_STORY_ENTRIES:]
                 self.publish(c, room, state); self.save(c, room, state)
                 result = self.view(state)
-                trace.update(status='completed', result=result)
-                c.execute('UPDATE adventure_requests SET body=? WHERE room_id=? AND request_id=?', (json.dumps({'status': 'done', 'result': result}, ensure_ascii=False), room, key))
+                stored_result = campaign_storage.freeze_result(c, result)
+                trace.update(status='completed', result=stored_result)
+                c.execute('UPDATE adventure_requests SET body=? WHERE room_id=? AND request_id=?', (json.dumps({'status': 'done', 'result': stored_result}, ensure_ascii=False), room, key))
                 c.execute('UPDATE ai_requests SET body=? WHERE room_id=? AND request_id=?', (json.dumps(trace, ensure_ascii=False), room, key))
                 narration = self.prepare_narration(c, room, state, actor, key) if not reaction else None
             return self.narrate(room, narration, result) if narration else result
@@ -683,4 +740,5 @@ class AdventureStore:
                 for table in ('adventure_requests', 'ai_requests'):
                     c.execute(f'UPDATE {table} SET body=? WHERE room_id=? AND request_id=?', (json.dumps(trace, ensure_ascii=False), room, key))
                 self.event(c, room, str(uuid5(UUID(key), 'session.error')), 'second', 'Мастер не смог разобрать заявку. Ничего не исполнено; уточните цель и способ.', {'ai_error': True})
+            if isinstance(error, MessageConflict):raise MessageConflict(trace['error']) from None
             raise ValueError(trace['error']) from None

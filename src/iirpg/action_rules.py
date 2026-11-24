@@ -73,6 +73,8 @@ def prepare(world: dict, actor: dict, step: dict, inventory_rules: dict | None =
     target = world['entities'].get(key)
     prepared = {'rule': rule, 'step': deepcopy(step), 'actor': actor['id'], 'target': key,
                 'seconds': RULES[rule].get('seconds', 2)}
+    if rule == 'explore':
+        raise ValueError('Новая сцена должна быть создана перед перемещением.')
     if rule == 'move':
         if step.get('method') not in (None, '', 'walk', 'run'):
             raise ValueError('Такой способ перемещения не поддержан. Можно идти пешком либо применить доступную способность.')

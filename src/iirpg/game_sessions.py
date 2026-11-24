@@ -12,6 +12,7 @@ from .party import SETTINGS
 
 from .world import scenario, scenarios
 from .session_world import initialize
+from . import campaign
 
 SCENARIOS = scenarios()
 EXCLUDED = {'game_sessions','game_checkpoints','game_operations','ai_requests','session_participants','participant_operations'}
@@ -27,7 +28,7 @@ class GameSessions:
     def list(self):
         with self.store._connection() as c:
             games=[dict(r) for r in c.execute('SELECT s.*,r.created_at,EXISTS(SELECT 1 FROM game_checkpoints p WHERE p.room_id=s.room_id) AS has_save FROM game_sessions s JOIN rooms r ON r.id=s.room_id ORDER BY r.created_at DESC,s.rowid DESC')]
-        return {'games':games,'scenarios':SCENARIOS}
+        return {'games':games,'scenarios':SCENARIOS,'campaigns':campaign.campaigns()}
 
     def tables(self,c):
         names=[r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'") if r[0] not in EXCLUDED and not r[0].startswith('sqlite_')]
@@ -52,7 +53,7 @@ class GameSessions:
     def execute(self,command,key):
         try:UUID(key)
         except (ValueError,TypeError,AttributeError):raise ValueError('Нужен UUID операции.') from None
-        if set(command)-{'action','room_id','name','scenario','hero_id','party'}:raise ValueError('Неизвестные поля сеанса.')
+        if set(command)-{'action','room_id','name','scenario','campaign','hero_id','party'}:raise ValueError('Неизвестные поля сеанса.')
         encoded=json.dumps(command,sort_keys=True)
         with self.store._connection() as c:
             c.execute('BEGIN IMMEDIATE')
@@ -62,7 +63,10 @@ class GameSessions:
                 return json.loads(prior['response'])
             action=command.get('action');room=command.get('room_id')
             if action=='create':
-                config=scenario(command.get('scenario'))
+                region=campaign.campaign(command['campaign']) if command.get('campaign') else None
+                if region and command.get('scenario'):
+                    raise ValueError('Выберите кампанию или отдельный сценарий.')
+                config=scenario(region['starting_episode'] if region else command.get('scenario'))
                 title=command.get('name','Новая игра')
                 if not isinstance(title,str) or not title.strip() or len(title)>100:raise ValueError('Название: от 1 до 100 символов.')
                 party = command.get('party')
@@ -86,6 +90,9 @@ class GameSessions:
                 c.execute('UPDATE room_rosters SET revision=1 WHERE room_id=?',(room,))
                 state={'revision':1,'scenario_id':config['id'],'location':config['start'],'character_id':actor,'history':[{'player':'','gm':config['intro'],'action':'start'}]}
                 initialize(state)
+                if region:
+                    campaign.begin(state,region)
+                    state['history'][0]['gm'] = region['intro'] + '\n\n' + config['intro']
                 c.execute('INSERT INTO adventures VALUES(?,?)',(room,json.dumps(state,ensure_ascii=False)));self.adventure.publish(c,room,state)
                 self.adventure.save(c,room,state)
                 if party:

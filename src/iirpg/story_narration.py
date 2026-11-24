@@ -68,6 +68,7 @@ def payload(state: dict, actor: dict, config: dict) -> dict:
     full = context(state, actor, entry['player'])
     data = {k: full[k] for k in ('hero', 'hero_id', 'character_build', 'shared_party', 'conversation_partner', 'gm_knowledge',
                                 'observations', 'history', 'recollections', 'pending_check', 'location_id', 'trade')}
+    if full.get('campaign'):data['campaign'] = full['campaign']
     events = entry.get('events', [])
     data.update(phase='AFTER_ACTION' if events and events[-1].get('rule') != 'talk' else 'DIALOGUE', confirmed_results=events,
                 plan={k: state.get('plan', {})[k] for k in ('status', 'reason', 'index') if k in state.get('plan', {})},
