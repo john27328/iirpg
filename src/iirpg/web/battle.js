@@ -17,14 +17,16 @@ const side=(f,i)=>f.team||(i===0?'players':'enemies');
 const living=f=>f.hp>0&&!f.surrendered;
 const active=()=>battle?.fighters?.[battle.turn];
 const actorId=()=>active()?.entity_id||`fighter:${battle?.turn}`;
-const playerTurn=()=>battle?.status==='active'&&side(active(),battle.turn)==='players';
-const enemyTurn=()=>battle?.status==='active'&&!playerTurn();
+const playerTurn=()=>battle?.status==='active'&&side(active(),battle.turn)==='players'&&(session.identity.role!=='player'||active()?.character_id===session.identity.character_id);
+const enemyTurn=()=>battle?.status==='active'&&side(active(),battle.turn)==='enemies';
 const canAct=()=>session.ready&&!busy&&!retry&&playerTurn();
 const session=createRoomSession(async()=>{
   if(lastRoom!==session.room){lastRoom=session.room;selectedThread=null;q('#auto-npc').checked=false;clearTimeout(npcTimer);npcTimer=null;npcSteps=0;retry=null;chosenHeroes=new Set();battle=null;scene=null;roster=null;selectedPosition=null;selectedPreset=null;targetId='';objectId='';draftActor=null;battleChat.reset();partyKey=mapKey=queueKey=journalKey=intentsKey='';q('#action-error').hidden=true;q('#battle-preparation').open=true;}
+  q('#battle-preparation').hidden=session.identity.role==='player';
+  q('#party-limit').textContent='до '+(session.identity.max_players||8)+' героев';
   await refresh();
 });
-const Chat=createChatClass({context:()=>({room:session.room,generation:session.generation,ready:session.ready}),request:session.request,createRequestId:createId,diceCatalog:()=>null,setConnection:session.connection,roomFragment:()=>location.hash.slice(1),showBattle:()=>{},refreshChats:()=>refreshBattleChat()});
+const Chat=createChatClass({context:()=>({room:session.room,generation:session.generation,ready:session.ready,role:session.identity.role,characterId:session.identity.character_id,playerId:session.identity.player_id}),request:session.request,createRequestId:createId,diceCatalog:()=>null,setConnection:session.connection,roomFragment:()=>location.hash.slice(1),showBattle:()=>{},refreshChats:()=>refreshBattleChat()});
 const battleChat=new Chat('first','01','Обсудите замысел с ведущим; цель выбирается на карте.',{
   id:'battle',container:'#battle-chat',title:'Чат с ведущим',enabled:()=>session.ready&&playerTurn(),sendEnabled:()=>canAct()&&(!draftActor||draftActor===actorId()),
   send:async(text,retry)=>{
@@ -77,7 +79,7 @@ function renderPreparation(){
   q('#enemy-group').disabled=locked||!!preset;q('#battle-preset').disabled=locked;
   q('#create-training-hero').disabled=locked||!session.ready;
   q('#start-battle').textContent=battle?.status==='finished'?'Сыграть ещё раз':'Начать бой';
-  q('#start-battle').disabled=locked||!session.ready||!chosenHeroes.size||chosenHeroes.size>4;
+  q('#start-battle').disabled=locked||!session.ready||!chosenHeroes.size||chosenHeroes.size>(session.identity.max_players||8);
 }
 function renderQueue(){
   const fingerprint=JSON.stringify([battle?.revision,battle?.id]);if(fingerprint===queueKey)return;queueKey=fingerprint;

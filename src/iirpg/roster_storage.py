@@ -128,6 +128,9 @@ class RosterStore:
             revision = integer(command.get("revision"), "Ревизия", 0, 9223372036854775806)
             if revision != state["revision"]:
                 raise MessageConflict("Данные изменились в другом окне. Обновите список и повторите изменение.")
+            if command.get('action')=='delete_character' and connection.execute("SELECT 1 FROM sqlite_master WHERE name='session_participants'").fetchone():
+                if connection.execute('SELECT 1 FROM session_participants WHERE room_id=? AND character_id=?',(room_id,command.get('id'))).fetchone():
+                    raise MessageConflict('Сначала уберите участника из группы в меню приглашений.')
             session_state = None
             if command.get('action') in ('configure_build', 'update_character', 'delete_character', 'add_item', 'update_item', 'remove_item', 'set_item_state'):
                 for table in ('encounters', 'adventures'):

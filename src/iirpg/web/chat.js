@@ -82,7 +82,7 @@ return class Chat {
   update() {
     this.input.disabled = !(this.options.enabled?.() ?? env.context().ready);
     this.audience.disabled = !(this.options.enabled?.() ?? env.context().ready) || this.busy;
-    this.button.disabled = !(this.options.enabled?.() ?? env.context().ready) || this.busy || this.options.sendEnabled?.() === false || !this.input.value.trim();
+    this.button.disabled = !(this.options.enabled?.() ?? env.context().ready) || this.busy || env.context().gmBusy || this.options.sendEnabled?.() === false || !this.input.value.trim();
     this.element.querySelectorAll(".reply-choice").forEach((button) => {
       button.disabled = !(this.options.enabled?.() ?? env.context().ready) || this.busy;
     });
@@ -132,7 +132,7 @@ return class Chat {
       return;
     }
     const nearBottom = this.list.scrollHeight - this.list.scrollTop - this.list.clientHeight < 90;
-    const outgoing = message.sender === this.key || ['intent','clarify_intent'].includes(message.combat?.action);
+    const outgoing = (message.metadata?.player_id && env.context().playerId ? message.metadata.player_id===env.context().playerId && message.sender===this.key : message.sender === this.key) || (['intent','clarify_intent'].includes(message.combat?.action)&&(!env.context().characterId||message.combat?.character_id===env.context().characterId));
     const item = document.createElement("div");
     item.className = `message${outgoing ? " outgoing" : ""}`;
     item.dataset.messageId = message.id;
@@ -140,6 +140,7 @@ return class Chat {
     const label = document.createElement("span");
     label.className = "message-label";
     label.textContent = outgoing ? "Вы" : ({ first: "Игрок", second: this.options.assistantName || "Ведущий" }[message.sender] || message.sender);
+    if(message.metadata?.actor_name)label.textContent=message.sender==='first'?`${message.metadata.actor_name}${outgoing?' · Вы':''}`:`Ведущий · ${message.metadata.actor_name}`;
     if (message.combat) label.textContent = `Бой · ${message.combat.actor || "Ведущий"}`;
     if (message.visibility.mode === "selected") label.textContent += " · Ограниченная видимость";
     const text = document.createElement("p");
@@ -240,8 +241,10 @@ return class Chat {
       body.append(description);
     }
     body.append(line);
+    const ownOffer=env.context().role!=='player'||!offer?.metadata?.character_id||offer.metadata.character_id===env.context().characterId;
+    if(offer?.metadata?.actor_name)label.textContent=`🎲 ${offer.metadata.actor_name} · ${arguments_.label}`;
     if (cancelled) outcome.textContent = "Попытка отменена";
-    if (offer && !call && !result && !cancelled && offer.recipient === this.key) {
+    if (offer && !call && !result && !cancelled && ownOffer && offer.recipient === this.key) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "button-secondary dice-offer-roll";
@@ -368,7 +371,7 @@ return class Chat {
       } else if(this.key==='first'&&visibility.mode==='all'){
         if(!this.retry.sessionCommand){
           const [story,roster]=await Promise.all([env.request(`/api/rooms/${targetRoom}/session`),env.request(`/api/rooms/${targetRoom}/roster`)]);
-          const hero=story.character_id||roster.characters.find(c=>c.kind==='pc')?.id;
+          const hero=env.context().characterId||story.character_id||roster.characters.find(c=>c.kind==='pc')?.id;
           if(!hero)throw new Error('Сначала создайте персонажа во вкладке персонажей.');
           this.retry.sessionCommand={revision:story.revision,character_id:hero,text};
         }
@@ -403,6 +406,7 @@ return class Chat {
   }
 
   configureDice(catalog) {
+    if(env.context().role==='player'){this.dicePanel.hidden=true;return;}
     this.diceSystem.replaceChildren();
     for (const [key, definition] of Object.entries(catalog.systems)) {
       const option = document.createElement("option");

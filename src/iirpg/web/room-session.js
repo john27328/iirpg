@@ -3,7 +3,7 @@ export function createRoomSession(onConnected) {
   const pattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   const read=()=>pattern.test(location.hash.slice(1))?new URLSearchParams({room:location.hash.slice(1)}):new URLSearchParams(location.hash.slice(1));
   const stored=(storage,key)=>{try{return window[storage].getItem(key)||'';}catch{return '';}};
-  let token=read().get('access')||stored('sessionStorage','iirpg-access-token'), room=null, generation=0, ready=false;
+  let token=read().get('access')||stored('sessionStorage','iirpg-access-token'), room=null, generation=0, ready=false, identity={role:'owner'};
   const remember=(storage,key,value)=>{try{window[storage].setItem(key,value);}catch{/* Optional storage. */}};
   const q=s=>document.querySelector(s);
   function setToken(value){token=value.trim();remember('sessionStorage','iirpg-access-token',token);}
@@ -23,7 +23,8 @@ export function createRoomSession(onConnected) {
     const epoch=++generation;ready=false;q('#copy-link').disabled=true;q('#connection-label').textContent='Подключение…';q('.connection').classList.remove('online');
     try{
       const params=read();if(params.get('access'))setToken(params.get('access'));
-      let selected=params.get('room')||stored('localStorage','iirpg-room');
+      identity=await request('/api/identity');document.body.dataset.role=identity.role;
+      let selected=identity.role==='player'?identity.room_id:params.get('room')||stored('localStorage','iirpg-room');
       if(!pattern.test(selected))selected=(await request('/api/rooms',{method:'POST',body:'{}'})).room_id;
       await request(`/api/rooms/${selected}/combat`);
       if(epoch!==generation)return;
@@ -36,7 +37,7 @@ export function createRoomSession(onConnected) {
   q('#access-gate').addEventListener('submit',e=>{e.preventDefault();setToken(q('#access-key').value);history.replaceState(null,'','#'+new URLSearchParams({...(read().get('room')?{room:read().get('room')}:{}),access:token}));connect();});
   q('#copy-link').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(location.origin+link('/?battle=1'));q('#copy-link').textContent='Ссылка скопирована';}catch{q('#notice').textContent='Ссылка на эту комнату находится в адресной строке.';q('#notice').hidden=false;}});
   window.addEventListener('hashchange',connect);
-  return {get room(){return room;},get generation(){return generation;},get ready(){return ready;},request,connect,link,updateLinks,connection};
+  return {get identity(){return identity;},get room(){return room;},get generation(){return generation;},get ready(){return ready;},request,connect,link,updateLinks,connection};
 }
 
 export function createId(){

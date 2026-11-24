@@ -11,6 +11,8 @@ from urllib.parse import parse_qs, urlsplit
 
 from .adventure import AdventureStore
 from .game_sessions import GameSessions
+from .player_access import PlayerAccess
+from .party import SETTINGS
 from .ai import AIService, DEFAULT_AI_CONFIG, OpenRouterClient, load_config
 from .scene import SceneStore
 from .combat import CombatStore
@@ -42,6 +44,7 @@ STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/debug": ("debug.html", "text/html; charset=utf-8"),
     "/debug/": ("debug.html", "text/html; charset=utf-8"),
+    "/multiplayer.js": ("multiplayer.js", "text/javascript; charset=utf-8"),
     "/hero-menu.js": ("hero-menu.js", "text/javascript; charset=utf-8"),
     "/chat.js": ("chat.js", "text/javascript; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
@@ -72,6 +75,7 @@ class ChatHTTPServer(ThreadingHTTPServer):
         self.ai = AIService(self.combat, self.scene, load_config(ai_config), OpenRouterClient(openrouter_key_file))
         self.adventure = AdventureStore(self.ai)
         self.games = GameSessions(self.adventure)
+        self.player_access = PlayerAccess(self)
         self.access_token = access_token
         super().__init__(address, ChatHandler)
 
@@ -100,10 +104,13 @@ class ChatHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _json(self, status: int, payload: dict) -> None:
+        if getattr(self,'principal',None) and isinstance(payload,dict) and 'world' in payload and 'history' in payload:
+            payload=self.server.player_access.session_view(payload)
         self._respond(status, json.dumps(payload, ensure_ascii=False).encode(),
                       "application/json; charset=utf-8")
 
     def _body(self) -> dict:
+        if getattr(self,"_cached_body",None) is not None:return self._cached_body
         if self.headers.get_content_type() != "application/json":
             raise ValueError("Ожидается application/json.")
         if self.headers.get("Transfer-Encoding"):
@@ -120,6 +127,7 @@ class ChatHandler(BaseHTTPRequestHandler):
             raise ValueError("Некорректный JSON.") from None
         if not isinstance(payload, dict):
             raise ValueError("Ожидается объект JSON.")
+        self._cached_body=payload
         return payload
 
     @staticmethod
@@ -155,14 +163,27 @@ class ChatHandler(BaseHTTPRequestHandler):
         if method == "GET" and route.path == "/health":
             self._json(200, {"status": "ok"})
             return
-        if route.path.startswith("/api/") and self.server.access_token:
-            received = self.headers.get("Authorization", "").encode("utf-8")
-            expected = f"Bearer {self.server.access_token}".encode("utf-8")
-            if not secrets.compare_digest(received, expected):
-                self._json(401, {"error": "Нужен ключ доступа из вашей секретной ссылки."})
-                return
+        self.principal = None
+        if route.path.startswith('/api/'):
+            received = self.headers.get('Authorization','')
+            owner = bool(self.server.access_token and secrets.compare_digest(received.encode(), ('Bearer '+self.server.access_token).encode()))
+            if not owner and received.startswith('Bearer '):
+                self.principal = self.server.games.participants.authenticate(received[7:])
+            if not owner and (self.server.access_token or received) and not self.principal:
+                self._json(401, {'error':'Нужна действующая ссылка игрока или ключ владельца.'});return
+            if self.principal:
+                self.server.player_access.authorize(self.principal,method,route.path,route.query,self._body)
+        if method=='GET' and route.path=='/api/identity':
+            self._json(200,{**(self.principal or {'role':'owner'}),'max_players':SETTINGS['max_players']});return
+        participants_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/participants',route.path)
+        if participants_match:
+            if method=='GET':self._json(200,self.server.games.participants.list(participants_match[1]));return
+            if method=='POST':self._json(200,self.server.games.participants.execute(participants_match[1],self._body(),self.headers.get('Idempotency-Key','')));return
         if route.path == '/api/games':
-            if method == 'GET':self._json(200,self.server.games.list());return
+            if method == 'GET':
+                data=self.server.games.list()
+                if self.principal:data['games']=[g for g in data['games'] if g['room_id']==self.principal['room_id']]
+                self._json(200,data);return
             if method == 'POST':self._json(200,self.server.games.execute(self._body(),self.headers.get('Idempotency-Key','')));return
         if route.path == '/api/characters':
             if method == 'GET':self._json(200,self.server.games.heroes.list());return
@@ -190,6 +211,9 @@ class ChatHandler(BaseHTTPRequestHandler):
         if method == 'GET' and route.path == '/api/combat/presets':
             self._json(200, {'presets': self.server.combat.presets})
             return
+        status_match=re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/session/status',route.path)
+        if method=='GET' and status_match:
+            self._json(200,self.server.adventure.status(status_match[1]));return
         cancel_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/session/cancel', route.path)
         if method == 'POST' and cancel_match:
             self._json(200, self.server.adventure.cancel(cancel_match.group(1), self._body().get('offer_id','')))
@@ -298,8 +322,12 @@ class ChatHandler(BaseHTTPRequestHandler):
         self._json(404, {"error": "Страница не найдена."})
 
     def _handle(self, method: str) -> None:
+        self._cached_body=None
+        self.principal=None
         try:
             self._dispatch(method)
+        except PermissionError as error:
+            self._json(HTTPStatus.FORBIDDEN, {'error':str(error)})
         except MessageConflict as error:
             self._json(HTTPStatus.CONFLICT, {"error": str(error)})
         except ValueError as error:

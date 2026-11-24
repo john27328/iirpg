@@ -4,6 +4,10 @@
   "timeout_seconds": 45,
   "daily_request_limit": 100,
   "context_max_bytes": 14000,
+  "session_context_max_bytes": 48000,
+  "session_narration": true,
+  "session_model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "session_reasoning": false,
   "npc": {
     "personality": "Осторожный спарринг-партнёр, старается победить и защищаться при опасности.",
     "goal": "Победить в учебном бою, используя доступные действия."

@@ -10,7 +10,7 @@
   <div class="battle-workspace">
     <header class="topbar">
       <a class="brand" href="/"><span class="brand-mark">ii</span>IIRPG <span class="brand-label">ТАКТИЧЕСКИЙ БОЙ</span></a>
-      <nav class="page-nav" aria-label="Страницы"><a href="/" class="page-link">Игра</a><a href="/debug" class="page-link">Разработчику</a></nav>
+      <nav class="page-nav" aria-label="Страницы"><a href="/" class="page-link">Игра</a><a href="/debug" class="page-link owner-only">Разработчику</a></nav>
       <div class="connection" role="status"><span class="status-dot"></span><span id="connection-label">Подключение…</span></div>
     </header>
     <main>
@@ -18,7 +18,7 @@
       <form id="access-gate" class="notice access-gate" hidden><label for="access-key">Ключ доступа к комнате</label><input id="access-key" type="password" autocomplete="current-password" required><button type="submit">Подключиться</button></form>
       <p><a id="back-to-story" class="page-link" href="/" target="_top" hidden>Вернуться к мастеру и продолжить историю →</a></p><header class="battle-heading"><div><div class="eyebrow">СТОЛКНОВЕНИЕ</div><h1 id="battle-title">Поле боя</h1><p id="battle-status" role="status">Загружаем обстановку…</p></div><button id="copy-link" class="button-secondary" type="button" disabled>Скопировать ссылку</button></header>
       <details id="battle-preparation" hidden class="battle-panel" open><summary>Участники и начало боя</summary>
-        <div class="preparation-grid"><fieldset><legend>Ваша группа <span>до 4 героев</span></legend><button id="create-training-hero" type="button">Создать учебного героя</button><div id="party-options"><p>Добавьте персонажей на странице игры.</p></div></fieldset>
+        <div class="preparation-grid"><fieldset><legend>Ваша группа <span id="party-limit">Выберите группу</span></legend><button id="create-training-hero" type="button">Создать учебного героя</button><div id="party-options"><p>Добавьте персонажей на странице игры.</p></div></fieldset>
           <div class="preparation-controls"><label class="preset-picker">Заготовка боя<select id="battle-preset" disabled></select></label><p id="preset-description"></p><label>Противники<select id="enemy-group" disabled></select></label><button type="button" id="start-battle" class="primary-action" disabled>Начать бой</button><p>ОЗ и снаряжение листов сохраняются. Заготовка загрузит свою карту при начале боя.</p><a href="/" class="page-link">Персонажи и своя карта ↗</a></div></div>
       </details>
       <p class="input-help">Выберите клетку для перемещения или противника для атаки. У героя три действия за ход. Затем нажмите «Закончить ход». Свободный замысел можно описать текстом.</p><label class="follow-label"><input id="auto-npc" type="checkbox">ИИ самостоятельно разыгрывает ходы противников</label><p id="auto-npc-status" class="input-help" role="status"></p><section class="initiative-section" aria-labelledby="initiative-title"><div class="section-heading"><h2 id="initiative-title">Очередь ходов</h2><span id="round-label">—</span></div><ol id="initiative-queue" aria-label="Очередь участников"><li class="muted">Бой ещё не начат</li></ol></section>

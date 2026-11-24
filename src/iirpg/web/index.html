@@ -13,7 +13,7 @@
   <div class="workspace">
     <header class="topbar">
       <a class="brand" href="/" aria-label="IIRPG — главная"><span class="brand-mark">ii</span>IIRPG <span class="brand-label">ИГРА</span></a>
-      <nav class="page-nav" aria-label="Страницы"><a href="/" class="page-link">Игра</a><a href="/debug" class="page-link">Разработчику</a></nav>
+      <nav class="page-nav" aria-label="Страницы"><a href="/" class="page-link">Игра</a><a href="/debug" class="page-link owner-only">Разработчику</a></nav>
       <div class="connection" role="status"><span class="status-dot"></span><span id="connection-label">Подключение…</span></div>
     </header>
     <main>
@@ -21,15 +21,18 @@
         <div><div class="eyebrow">ПРИКЛЮЧЕНИЕ <span> / IIRPG</span></div><h1 id="page-title">Ваша история. <span>Ваш следующий ход.</span></h1><p>Продолжайте приключение, следите за персонажами и собирайте снаряжение.</p></div>
         <div class="room-actions"><button type="button" id="games-toggle" class="button-secondary">Сеансы</button><button id="copy-link" class="button-secondary" disabled>Скопировать ссылку</button><button id="new-room" hidden class="button-icon" title="Новый диалог" aria-label="Начать новый диалог" disabled>＋</button></div>
       </section>
+      <p id="group-status" role="status" class="notice" hidden></p>
+      <p id="player-identity" class="notice" hidden></p>
       <div id="notice" class="notice" role="alert" hidden></div>
       <form id="access-gate" class="notice access-gate" hidden><label for="access-key">Ключ доступа к диалогу</label><input id="access-key" type="password" autocomplete="current-password" placeholder="Вставьте ключ из вашей ссылки" required><button class="button-secondary" type="submit">Открыть чат</button></form>
       <section id="games-menu" class="battle-panel" hidden aria-label="Сеансы игры">
         <h2>Мои игры</h2><p>Прогресс сохраняется автоматически. Кнопка «Сохранить» создаёт точку, к которой можно вернуться.</p>
-        <button id="game-save" type="button">Сохранить текущую игру</button>
-        <h3>Новое приключение</h3>
-        <form id="game-create"><label>Название<input id="game-name" maxlength="100" value="Новое приключение" required></label><label>Сценарий<select id="game-scenario"></select></label><label>Ваш герой<select id="game-hero" required></select></label><button id="game-create-button">Новая игра</button></form>
-        <div id="hero-choice-summary" class="muted"></div>
-        <section aria-labelledby="heroes-title"><h3 id="heroes-title">Готовые герои</h3><p>Для каждой новой игры создаётся отдельная копия героя со стартовыми ресурсами и снаряжением.</p><button id="hero-new" type="button">Создать персонажа с ИИ</button><div id="hero-library"></div><div id="hero-drafts"></div></section>
+        <button class="owner-only" id="game-save" type="button">Сохранить текущую игру</button>
+        <section id="participants-panel" class="owner-only"><h3>Игроки и ссылки</h3><p>Каждому игроку — своя ссылка и герой. Группа путешествует вместе, в бою каждый управляет своим персонажем.</p><button id="enable-multiplayer" type="button">Создать ссылки для двух игроков</button><form id="invite-player" hidden><label>Имя игрока<input id="invite-name" maxlength="80" required></label><label>Готовый герой<select id="invite-hero"></select></label><button id="invite-add">Добавить игрока</button></form><div id="invitation-links"></div><p id="participants-status" role="status"></p></section>
+        <h3 class="owner-only">Новое приключение</h3>
+        <form class="owner-only" id="game-create"><label>Название<input id="game-name" maxlength="100" value="Новое приключение" required></label><label>Сценарий<select id="game-scenario"></select></label><label>Ваш герой<select id="game-hero" required></select></label><label>Игроков<input id="game-player-count" type="number" min="1" max="8" value="1" required></label><label id="first-player-name" hidden>Имя первого игрока<input id="game-player-name" maxlength="80" value="Игрок 1"></label><div id="extra-players"></div><button id="game-create-button">Новая игра</button></form>
+        <div class="owner-only" id="hero-choice-summary"></div>
+        <section class="owner-only" aria-labelledby="heroes-title"><h3 id="heroes-title">Готовые герои</h3><p>Для каждой новой игры создаётся отдельная копия героя со стартовыми ресурсами и снаряжением.</p><button id="hero-new" type="button">Создать персонажа с ИИ</button><div id="hero-library"></div><div id="hero-drafts"></div></section>
         <section id="hero-creator" hidden aria-label="Создание персонажа с помощником"><div class="section-heading"><h3>Создаём персонажа</h3><button id="hero-creator-close" type="button">Вернуться к выбору героя</button></div><div id="hero-creation-chat" class="chats game-chat"></div></section>
         <p id="heroes-status" role="status"></p><p id="games-status" role="status"></p><div id="games-list"></div>
       </section>

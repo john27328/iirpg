@@ -75,6 +75,8 @@ def accessible(world: dict, key: str, actor: str) -> bool:
         if owner == actor:
             return True
         container = world['entities'][owner]
+        if container['kind'] == 'pc':
+            return False
         if container['kind'] == 'npc':
             return container.get('status') == 'defeated'
         if container['kind'] == 'container' and not container.get('open'):

@@ -30,13 +30,27 @@ SYSTEM_PROMPT = (
 
 def load_config(path: Path = DEFAULT_AI_CONFIG) -> dict:
     config = json.loads(path.read_text())
-    if set(config) != {'model', 'max_tokens', 'timeout_seconds', 'daily_request_limit', 'context_max_bytes', 'npc', 'reasoning'}:
+    required = {'model', 'max_tokens', 'timeout_seconds', 'daily_request_limit', 'context_max_bytes', 'npc', 'reasoning'}
+    optional = {'session_context_max_bytes', 'session_narration', 'session_model', 'session_reasoning', 'session_reasoning_tokens'}
+    if not required <= set(config) or set(config) - required - optional:
         raise ValueError('Неизвестные или отсутствующие настройки ИИ.')
     model = config['model']
     if not isinstance(model, str) or not (model == 'openrouter/free' or model.endswith(':free')) or len(model) > 200:
         raise ValueError('Разрешены только openrouter/free и модели с суффиксом :free.')
     if type(config['reasoning']) is not bool:
         raise ValueError('reasoning должен быть true или false.')
+    if type(config.get('session_narration', False)) is not bool:
+        raise ValueError('session_narration должен быть true или false.')
+    if type(config.get('session_reasoning', False)) is not bool:
+        raise ValueError('session_reasoning должен быть true или false.')
+    if 'session_reasoning_tokens' in config and (type(config['session_reasoning_tokens']) is not int or not 128 <= config['session_reasoning_tokens'] <= 2048):
+        raise ValueError('session_reasoning_tokens должен быть от 128 до 2048.')
+    session_budget = config.get('session_context_max_bytes', config['context_max_bytes'])
+    if type(session_budget) is not int or not 1000 <= session_budget <= 128000:
+        raise ValueError('session_context_max_bytes должен быть от 1000 до 128000 байт.')
+    session_model = config.get('session_model', model)
+    if not isinstance(session_model, str) or len(session_model) > 200 or not (session_model == 'openrouter/free' or session_model.endswith(':free')):
+        raise ValueError('Для мастера разрешены только бесплатные модели.')
     for name, low, high in [('max_tokens', 32, 1024), ('timeout_seconds', 5, 60),
                             ('daily_request_limit', 1, 1000), ('context_max_bytes', 1000, 20000)]:
         if type(config[name]) is not int or not low <= config[name] <= high:
@@ -46,6 +60,14 @@ def load_config(path: Path = DEFAULT_AI_CONFIG) -> dict:
     if any(not isinstance(value, str) or not value.strip() or len(value) > 500 for value in config['npc'].values()):
         raise ValueError('Поля профиля NPC должны быть строками до 500 символов.')
     return config
+
+
+def session_reasoning(config: dict) -> dict:
+    """Reasoning is independent of the small NPC action budget; never log it."""
+    if not config.get('session_reasoning'):
+        return {'enabled': False}
+    return {'enabled': True, 'exclude': True,
+            **({'max_tokens': config['session_reasoning_tokens']} if 'session_reasoning_tokens' in config else {})}
 
 
 class OpenRouterClient:
@@ -116,6 +138,10 @@ class AIService:
         with self.store._connection() as c:
             used = c.execute("SELECT (SELECT COUNT(*) FROM ai_requests WHERE date(started,'unixepoch')=?) + COALESCE((SELECT count FROM ai_deleted_usage WHERE day=?),0)", (today,today)).fetchone()[0]
         return {'provider': 'openrouter', 'model': self.config['model'], 'configured': self.client.ready(),
+                'session_model': self.config.get('session_model', self.config['model']),
+                'session_context_max_bytes': self.config.get('session_context_max_bytes', self.config['context_max_bytes']),
+                'session_narration': self.config.get('session_narration', False),
+                'session_reasoning': self.config.get('session_reasoning', False),
                 'daily_request_limit': self.config['daily_request_limit'], 'requests_today': used,
                 'free_only': True}
 

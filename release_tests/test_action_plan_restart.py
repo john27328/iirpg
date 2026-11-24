@@ -7,6 +7,8 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 from iirpg.server import ChatHTTPServer
+from iirpg.application import ChatService
+from iirpg.dice import DiceTool
 from test_restart import running_server
 
 
@@ -29,9 +31,44 @@ class PlanRestartTests(unittest.TestCase):
             return room,state
         finally:server.server_close()
 
-    def request(self,base,path,payload=None):
-        with urlopen(Request(base+path,data=None if payload is None else json.dumps(payload).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer restart-action-plans-testing-token-123456789'}),timeout=5) as response:
+    def request(self,base,path,payload=None,key=None):
+        headers={'Content-Type':'application/json','Authorization':'Bearer restart-action-plans-testing-token-123456789'}
+        if key:headers['Idempotency-Key']=key
+        with urlopen(Request(base+path,data=None if payload is None else json.dumps(payload).encode(),headers=headers),timeout=5) as response:
             return json.load(response)
+
+    def test_open_promise_memory_and_narration_receipt_survive_restart(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory=Path(temporary)
+            (directory/'access-token').write_text('restart-action-plans-testing-token-123456789')
+            server=ChatHTTPServer(('127.0.0.1',0),directory/'chat.sqlite3')
+            class Client:
+                steps=[{'rule':'request','target':'hostess','method':'Не называть имени гостя.'}]
+                def ready(self):return True
+                def complete(self,payload,timeout):
+                    if payload['response_format']['json_schema']['name']=='scene_narration':
+                        return {'content':json.dumps({'reply':'Под навесом пахнет сеном.'})}
+                    return {'content':json.dumps({'intent':'act','reply':'Попытка.','steps':self.steps})}
+            client=Client();server.ai.client=client
+            try:
+                room=server.games.execute({'action':'create','scenario':'missing-book','name':'Открытая просьба'},str(uuid4()))['room_id']
+                state=server.adventure.read(room);actor=state['character_id']
+                state=server.adventure.execute(room,{'revision':state['revision'],'character_id':actor,'text':'Меня зовут Кир, я ищу сестру. Прошу не называть моего имени.'},str(uuid4()))
+                pending=state['pending_check']
+                ChatService(server.service.store,DiceTool(roll_die=lambda sides:20)).send(room,{
+                    'sender':'first','type':'tool.call','tool':'dice.roll','request_id':pending['roll_request_id'],'offer_id':pending['offer_id']})
+                state=server.adventure.read(room)
+                client.steps=[{'rule':'move','target':'yard'}]
+                key=str(uuid4());command={'revision':state['revision'],'character_id':actor,'text':'Выхожу во двор.'}
+                after=server.adventure.execute(room,command,key)
+                self.assertEqual(after['history'][-1]['action'],'narration')
+                self.assertEqual(len(after['world']['entities']['hostess']['commitments']),1)
+            finally:server.server_close()
+            with running_server(directory) as base:
+                root='/api/rooms/'+room+'/session'
+                self.assertEqual(self.request(base,root),after)
+                self.assertEqual(self.request(base,root,command,key),after)
+                self.assertEqual(self.request(base,root),after)
 
     def test_player_roll_resumes_plan_and_inventory_survives_real_restart(self):
         with tempfile.TemporaryDirectory() as temporary:

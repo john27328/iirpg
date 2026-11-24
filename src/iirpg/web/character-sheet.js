@@ -66,6 +66,7 @@ export class CharacterSheetWindow {
 
   update(disabled) {
     this.disabled = disabled;
+    $(".sheet-edit-tab",this.dialog).hidden=Boolean(this.readOnly);
     this.dialog.querySelectorAll("button, input, select, textarea").forEach((control) => { control.disabled = disabled; });
     if (!disabled && this.actor()) {
       const kind = this.actor().kind;
@@ -74,7 +75,7 @@ export class CharacterSheetWindow {
   }
 
   setMode(editing) {
-    if (this.disabled || !this.actor()) return;
+    if (this.disabled || !this.actor() || editing&&this.readOnly) return;
     if (!editing && this.editing) {
       $(".inventory-error", this.dialog)?.setAttribute("hidden", "");
     }
@@ -190,6 +191,7 @@ export class CharacterSheetWindow {
       if (p.slots_max) section.append(node('p', 'muted', 'В бою выберите клетку врага: появятся заклинания. В чате можно попросить «Создаю свет», «Обнаруживаю магию» или «Отдыхаю 8 часов и готовлю заклинания».'));
     }
     const details = node('details', 'sheet-editor-group');
+    if(this.readOnly){root.append(section);return;}
     details.open = !actor.build;
     details.append(node('summary', '', actor.build ? 'Изменить стартовую сборку' : 'Выбрать стартовую сборку'));
     details.append(node('p', 'muted', config.description + ' Применение заменит характеристики и базовые показатели. Имя, предметы, описание, полученные раны и потраченные ячейки сохраняются.'));

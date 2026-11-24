@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 from uuid import UUID, uuid4
+from .party import SETTINGS
 from typing import Callable
 from .roster_storage import RosterStore
 from .storage import MessageConflict
@@ -120,7 +121,7 @@ class CombatStore:
                 victim = state['last_attack']['target_index'] if kind == 'strike' else state['last_check']['target_index'] if kind == 'demoralize' else state['last_spell'].get('target_index') if kind == 'cast_spell' else None
                 event = {'action': kind, 'command': input_action, 'actor': actor,
                          'target': fighters[victim]['name'] if victim is not None else None,
-                         'actor_index': actor_index if fighters else None,
+                         'actor_index': actor_index if fighters else None, 'character_id':fighters[actor_index].get('character_id') if fighters else None,
                          'target_index': victim,
                          'before': before, 'after': snapshot()}
                 if source_text:
@@ -167,8 +168,8 @@ class CombatStore:
                 character_ids = command.get('character_ids', [command.get('character_id')])
                 if 'character_ids' in command and 'character_id' in command:
                     raise ValueError('Передайте character_id или character_ids, не оба поля.')
-                if not isinstance(character_ids, list) or not 1 <= len(character_ids) <= 4 or any(not isinstance(i, str) for i in character_ids) or len(set(character_ids)) != len(character_ids):
-                    raise ValueError('Выберите от одного до четырёх разных героев.')
+                if not isinstance(character_ids, list) or not 1 <= len(character_ids) <= SETTINGS['max_players'] or any(not isinstance(i, str) for i in character_ids) or len(set(character_ids)) != len(character_ids):
+                    raise ValueError(f"Выберите от одного до {SETTINGS['max_players']} разных героев.")
                 from .character_sheet import CharacterRules
                 heroes = []
                 for character_id in character_ids:
@@ -200,6 +201,10 @@ class CombatStore:
                     heroes[0]['hp']=min(heroes[0]['hp'],_session['hero_hp'])
                 if _session is not None and _session.get('target_name'):
                     enemies[0]['name'] = _session['target_name']
+                if _session is not None:
+                    for hero in heroes:
+                        hp=_session.get('hero_hps',{}).get(hero['character_id'],hero['hp'])
+                        hero['hp']=min(hero['hp'],hp)
                 enemy = enemies[0]
                 player = heroes[0]
                 fighters = [*heroes, *enemies]

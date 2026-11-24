@@ -25,9 +25,10 @@ def running_server(directory: Path):
         process = subprocess.Popen(
             [sys.executable, "-m", "iirpg", "--port", "0",
              "--database", str(directory / "chat.sqlite3"),
+             "--openrouter-key-file", str(directory / "no-ai-key"),
              "--access-token-file", str(directory / "access-token")],
             cwd=ROOT,
-            env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+            env={**{k:v for k,v in os.environ.items() if k != 'OPENROUTER_API_KEY'}, "PYTHONPATH": str(ROOT / "src")},
             stdout=output, stderr=subprocess.STDOUT,
         )
         try:

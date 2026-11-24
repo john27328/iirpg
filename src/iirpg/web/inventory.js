@@ -117,7 +117,12 @@ export class InventoryPanel {
   update() {
     const disabled = !this.context().ready || !this.state || this.busy;
     this.root.querySelectorAll("button, input, select, textarea").forEach((control) => { control.disabled = disabled; });
+    this.sheetWindow.readOnly=this.context().role==='player';
     this.sheetWindow.update(disabled);
+    if(this.context().role==='player'){
+      $('.manage-players',this.root).hidden=true;$('.new-character',this.root).hidden=true;
+      this.root.querySelectorAll('[data-foreign=true]').forEach(control=>control.disabled=true);
+    }
     if (!disabled) { this.updateOwner(); this.updateGrip(); }
   }
 
@@ -188,7 +193,7 @@ export class InventoryPanel {
   render() {
     if (!this.state) return;
     $(".inventory-rules", this.root).textContent = `${this.state.rules.name} · Персонажей: ${this.state.characters.length} · Игроков: ${this.state.players.length}`;
-    if (!this.state.characters.some((entry) => entry.id === this.selected)) this.selected = this.state.characters[0]?.id || null;
+    if (!this.state.characters.some((entry) => entry.id === this.selected)) this.selected = this.context().characterId || this.state.characters[0]?.id || null;
     this.renderList();
     this.renderDetail();
     if (this.sheetWindow.dialog.open) this.sheetWindow.sync();
@@ -224,7 +229,8 @@ export class InventoryPanel {
     const owner = this.state.players.find((player) => player.id === actor.player_id)?.name;
     title.append(node("span", "eyebrow", actor.kind === "npc" ? "NPC" : `ПЕРСОНАЖ ИГРОКА${owner ? ` · ${owner}` : ""}`), node("h3", "", actor.name));
     const actions = node("div", "inventory-actions");
-    actions.append(button("Лист персонажа", () => { this.error.hidden = true; this.sheetWindow.open(actor.id); }), button("Изменить", () => this.editCharacter(actor)), button("Удалить", async () => {
+    actions.append(button("Лист персонажа", () => { this.error.hidden = true; this.sheetWindow.open(actor.id); }));
+    if(this.context().role!=="player")actions.append(button("Изменить", () => this.editCharacter(actor)), button("Удалить", async () => {
       if (confirm(`Удалить персонажа «${actor.name}» и все его предметы?`)) await this.mutate("delete_character", {}, { id: actor.id });
     }));
     header.append(title, actions);
@@ -237,7 +243,8 @@ export class InventoryPanel {
     if (summary.encumbered) detail.append(node("p", "inventory-warning", "Перегруз: clumsy 1 и −10 футов ко всем Скоростям (минимум 5)."));
     if (actor.notes) detail.append(node("p", "character-notes", actor.notes));
     const itemsHeader = node("div", "inventory-items-header");
-    itemsHeader.append(node("h4", "", `Инвентарь · ${actor.items.length}`), button("+ Предмет", () => this.editItem()));
+    itemsHeader.append(node("h4", "", `Инвентарь · ${actor.items.length}`));
+    if(this.context().role!=="player")itemsHeader.append(button("+ Предмет", () => this.editItem()));
     detail.append(itemsHeader);
     if (!actor.items.length) detail.append(node("p", "inventory-empty", "Инвентарь пуст. Добавьте предмет из правил или опишите свой."));
     for (const [stateId, spec] of Object.entries(this.state.rules.states)) {
@@ -262,10 +269,12 @@ export class InventoryPanel {
           const changed = await this.mutate("update_item", { state: state.value }, { id: item.id, character_id: actor.id });
           if (!changed) state.value = item.state;
         });
-        controls.append(state, button("Изменить", () => this.editItem(item)), button("×", async () => {
+        state.dataset.foreign=String(this.context().role==="player"&&actor.id!==this.context().characterId);
+        controls.append(state);
+        if(this.context().role!=="player")controls.append(button("Изменить", () => this.editItem(item)), button("×", async () => {
           if (confirm(`Удалить «${item.name}» из инвентаря?`)) await this.mutate("remove_item", {}, { id: item.id, character_id: actor.id });
         }));
-        controls.lastChild.setAttribute("aria-label", `Удалить ${item.name}`);
+        if(this.context().role!=="player")controls.lastChild.setAttribute("aria-label", `Удалить ${item.name}`);
         row.append(info, controls);
         group.append(row);
       }

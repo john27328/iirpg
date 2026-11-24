@@ -74,24 +74,24 @@
     "request": {
       "skill": "diplomacy",
       "seconds": 2,
-      "summary": "Request: friendly/helpful NPC, приемлемая услуга из services, service обязателен; успех согласие, критпровал отношение −1.",
+      "summary": "Request: свободно сформулированная просьба friendly/helpful NPC. method — содержание; task/skill только для помощи в конкретной проверке. Успех сохраняет согласие, не выполняет просьбу за героя.",
       "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2393",
       "stop_after_check": true,
       "required_fields": [
         "target",
-        "service"
+        "method"
       ],
       "label": "Просьба"
     },
     "coerce": {
       "skill": "intimidation",
       "seconds": 60,
-      "summary": "Coerce: минута угроз, Will DC, service; согласие на приемлемую невредящую услугу на сутки; критпровал иммунитет неделю.",
+      "summary": "Coerce: минута угроз, Will DC. method — требование; task/skill при помощи в проверке. Согласие не даёт произвольного контроля NPC; критпровал — иммунитет неделю.",
       "source_url": "https://2e.aonprd.com/Actions.aspx?ID=2394",
       "stop_after_check": true,
       "required_fields": [
         "target",
-        "service"
+        "method"
       ],
       "label": "Принуждение"
     },
@@ -147,7 +147,7 @@
       "required_fields": []
     },
     "improvise": {
-      "summary": "Необычный способ преодолеть препятствие: только target.affordances[method], skill и эффекты заданы сценарием; иначе уточнение мастера.",
+      "summary": "Свободный необычный способ: method — описание, skill — навык. Физическое открытие существующего препятствия с athletics использует его Force Open и ту же КС; другие эффекты требуют поддержанного правила/affordance.",
       "source_url": "https://2e.aonprd.com/Rules.aspx?ID=2498",
       "local_source": "data/pathfinder2e-remaster/rules/playing-the-game.md",
       "required_fields": [

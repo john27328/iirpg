@@ -7,6 +7,7 @@ from .character_sheet import CharacterRules
 from .character_resources import save_character
 from .progression import describe
 from .roster import InventoryRules
+from .party import members, SETTINGS
 
 
 def initialize(state: dict, actor: dict | None = None) -> None:
@@ -45,9 +46,18 @@ def initialize(state: dict, actor: dict | None = None) -> None:
                 quest['completed'] = True
         state['world'] = world
     state['scenario_id'] = config['id']
+    # Add authored presentation data to old saves without changing their facts,
+    # agreements, attitudes, ownership or existing custom NPC characterizations.
+    for key, template in config['world']['entities'].items():
+        if key in state['world']['entities'] and 'personality' in template:
+            state['world']['entities'][key].setdefault('personality', deepcopy(template['personality']))
     state.setdefault('location', config['start'])
+    if state.get('party_ids'):
+        state['world']['party'] = list(state['party_ids'])
+        state['world']['party_mode'] = SETTINGS['travel_mode']
     if actor:
-        state['character_id'] = actor['id']
+        if not state.get('party_ids') or not state.get('character_id'):
+            state['character_id'] = actor['id']
         state['world']['entities'].setdefault(actor['id'], {'kind': 'pc', 'name': actor['name'], 'place': state['location']})
         for entity in state['world']['entities'].values():
             if entity.get('owner') == '$hero':
@@ -65,33 +75,36 @@ def actor_view(actor: dict, rules: dict) -> dict:
 
 def sync_inventory(c, room: str, state: dict, roster: dict) -> None:
     """Reconcile known world items against actual inventory; never respawn deleted loot."""
-    actor = next((a for a in roster['characters'] if a['id'] == state.get('character_id')), None)
-    if not actor:
+    identities = members(state)
+    actors = [a for a in roster['characters'] if a['id'] in identities]
+    if not actors:
         initialize(state)
         return
     migrated = 'world' not in state
-    initialize(state, actor)
-    for key, entity in state['world']['entities'].items():
-        if entity['kind'] != 'item' or entity.get('owner') != actor['id']:
-            continue
-        identity = entity.setdefault('roster_item_id', str(uuid5(UUID(room), 'adventure.item.' + key)))
-        actual = next((i for i in actor.get('items', []) if i['id'] == identity), None)
-        if actual:
-            entity['item'] = {k: deepcopy(v) for k, v in actual.items() if k != 'id'}
-        if not c.execute('SELECT 1 FROM inventory_items WHERE room_id=? AND id=? AND character_id=?', (room, identity, actor['id'])).fetchone():
-            if migrated and not state.get('inventory_version'):
-                body = InventoryRules(roster['rules']).item(entity['item'])
-                entity['item'] = deepcopy(body)
-                c.execute('INSERT INTO inventory_items VALUES(?,?,?,?)', (identity, room, actor['id'], json.dumps(body, ensure_ascii=False)))
-                c.execute('UPDATE room_rosters SET revision=revision+1 WHERE room_id=?', (room,))
-            else:
-                entity['owner'] = None
-    linked = {e.get('roster_item_id') for e in state['world']['entities'].values()}
-    for item in actor.get('items', []):
-        if item['id'] not in linked:
-            state['world']['entities']['inventory:' + item['id']] = {
-                'kind': 'item', 'name': item['name'], 'owner': actor['id'],
-                'roster_item_id': item['id'], 'item': {k: deepcopy(v) for k, v in item.items() if k != 'id'}}
+    for actor in actors:
+        initialize(state, actor)
+        for key, entity in state['world']['entities'].items():
+            if entity['kind'] != 'item' or entity.get('owner') != actor['id']:
+                continue
+            identity = entity.setdefault('roster_item_id', str(uuid5(UUID(room), 'adventure.item.' + key)))
+            actual = next((i for i in actor.get('items', []) if i['id'] == identity), None)
+            if actual:
+                entity['item'] = {k: deepcopy(v) for k, v in actual.items() if k != 'id'}
+            if not c.execute('SELECT 1 FROM inventory_items WHERE room_id=? AND id=? AND character_id=?', (room, identity, actor['id'])).fetchone():
+                if migrated and not state.get('inventory_version'):
+                    body = InventoryRules(roster['rules']).item(entity['item'])
+                    entity['item'] = deepcopy(body)
+                    c.execute('INSERT INTO inventory_items VALUES(?,?,?,?)', (identity, room, actor['id'], json.dumps(body, ensure_ascii=False)))
+                    c.execute('UPDATE room_rosters SET revision=revision+1 WHERE room_id=?', (room,))
+                else:
+                    entity['owner'] = None
+        linked = {e.get('roster_item_id') for e in state['world']['entities'].values()}
+        for item in actor.get('items', []):
+            if item['id'] not in linked:
+                state['world']['entities']['inventory:' + item['id']] = {
+                    'kind': 'item', 'name': item['name'], 'owner': actor['id'],
+                    'roster_item_id': item['id'], 'item': {k: deepcopy(v) for k, v in item.items() if k != 'id'}}
+
     state['inventory_version'] = 2
 
 
@@ -122,15 +135,22 @@ def persist_effects(c, room: str, state: dict, actor: dict, effects: list, roste
                 if actor['coins'] < amount: raise ValueError('У героя больше нет этих монет.')
                 actor['coins'] -= amount
             save_character(c, room, actor)
+            if effect['to'] != actor['id']:
+                other = c.execute('SELECT body FROM characters WHERE room_id=? AND id=?',(room,effect['to'])).fetchone()
+                if other:
+                    recipient = {'id':effect['to'], **json.loads(other[0])}
+                    recipient['coins'] += amount
+                    save_character(c, room, recipient)
         else:
             identity = entity.setdefault('roster_item_id', str(uuid5(UUID(room), 'adventure.item.' + effect['entity'])))
             if effect['from'] == actor['id']:
                 removed = c.execute('DELETE FROM inventory_items WHERE room_id=? AND id=? AND character_id=?', (room, identity, actor['id'])).rowcount
                 if not removed: raise ValueError('Предмета больше нет в инвентаре.')
-            if effect['to'] == actor['id']:
+            recipient = c.execute('SELECT id FROM characters WHERE room_id=? AND id=?', (room, effect['to'])).fetchone()
+            if recipient:
                 body = InventoryRules(roster_rules).item(entity['item'])
                 entity['item'] = deepcopy(body)
-                c.execute('INSERT INTO inventory_items VALUES(?,?,?,?)', (identity, room, actor['id'], json.dumps(body, ensure_ascii=False)))
+                c.execute('INSERT INTO inventory_items VALUES(?,?,?,?)', (identity, room, effect['to'], json.dumps(body, ensure_ascii=False)))
                 state.setdefault('collected_items', {})[effect['entity']] = identity
             c.execute('UPDATE room_rosters SET revision=revision+1 WHERE room_id=?', (room,))
 
@@ -140,6 +160,6 @@ def compatibility_view(state: dict) -> None:
     config = scenario(state['scenario_id'])
     for key, spec in config.get('legacy', {}).get('item_owner', {}).items():
         owner = state['world']['entities'][key].get('owner')
-        state[spec['recovered_flag']] = owner in (state.get('character_id'), spec['recipient'])
+        state[spec['recovered_flag']] = owner in (*members(state), spec['recipient'])
         goals = [q for q in state['world'].get('quests', {}).values() if q['item'] == key and q['owner'] == spec['recipient']]
         state[spec['returned_flag']] = any(q.get('completed') for q in goals) if goals else owner == spec['recipient']

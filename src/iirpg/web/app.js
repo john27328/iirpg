@@ -1,3 +1,4 @@
+import { MultiplayerMenu } from "/multiplayer.js";
 import { HeroMenu } from "/hero-menu.js";
 import { createChatClass } from "/chat.js";
 import { setupScene } from "/scene.js";
@@ -17,6 +18,8 @@ let timer;
 let ready = false;
 let switching = false;
 let accessToken = "";
+let identity = {role:"owner"};
+let gmBusy=false;
 let diceCatalog = null;
 const accessGate = $("#access-gate");
 
@@ -298,7 +301,7 @@ class JsonStub {
   }
 }
 
-const context = () => ({ room, generation, ready });
+const context = () => ({room,generation,ready,role:identity.role,characterId:identity.character_id,playerId:identity.player_id,maxPlayers:identity.max_players,gmBusy});
 if (isDebug) setupScene($("#scene"), request, context, createRequestId);
 const Chat = createChatClass({context,request,createRequestId,diceCatalog:()=>diceCatalog,refreshChats,setConnection,showBattle,roomFragment});
 const first = isDebug ? null : new Chat("first", "01", "Ваши действия и ответы ведущего");
@@ -308,6 +311,7 @@ const chats = [first, stub, debug].filter(Boolean);
 const inventory = isDebug ? null : new InventoryPanel($("#inventory"), request, context, createRequestId);
 
 const heroes = isDebug ? null : new HeroMenu({request,Chat,createId:createRequestId,locked:()=>gameLocked()});
+const multiplayer = isDebug ? null : new MultiplayerMenu({request,context,createId:createRequestId,heroes:()=>heroes?.data,locked:()=>gameLocked()});
 
 for (const [id, showInventory] of [["#show-chat", false], ["#show-inventory", true]]) {
   $(id)?.addEventListener("click", () => {
@@ -340,6 +344,14 @@ async function poll(epoch) {
   let next = document.hidden ? 5000 : 900;
   try {
     const hasMore = await refreshChats(room, epoch);
+    if(!isDebug){
+      const activity=await request(`/api/rooms/${room}/session/status`);
+      if(epoch!==generation)return;
+      gmBusy=activity.thinking;
+      $('#group-status').hidden=!gmBusy||first.busy;
+      $('#group-status').textContent=gmBusy?`Мастер отвечает${activity.actor_name?' персонажу '+activity.actor_name:''}. Следующее сообщение можно пока написать.`:'';
+      chats.forEach(chat=>chat.update());
+    }
     if (inventory && !$("#inventory").hidden) await inventory.refresh();
     if(heroes?.draftId&&!$("#hero-creator").hidden)await heroes.refreshDraft();
     if (epoch !== generation) return;
@@ -368,7 +380,11 @@ async function openRoom(fresh = false) {
   try {
     const fragment = readFragment();
     if (fragment.get("access")) setToken(fragment.get("access"));
-    let selected = fresh ? null : fragment.get("room") || storedRoom();
+    gmBusy=false;
+    identity=await request('/api/identity');
+    document.body.dataset.role=identity.role;
+    if(!isDebug){$('#player-identity').hidden=identity.role!=='player';$('#player-identity').textContent=identity.role==='player'?`${identity.player_name} · Ваш герой: ${identity.character_name}. Группа путешествует вместе.`:'';}
+    let selected = identity.role==='player'?identity.room_id:fresh ? null : fragment.get("room") || storedRoom();
     if (!selected || !roomPattern.test(selected)) {
       selected = (await request("/api/rooms", { method: "POST", body: "{}" })).room_id;
     }
@@ -391,7 +407,7 @@ async function openRoom(fresh = false) {
     history.replaceState(null, "", `#${roomFragment()}`);
     updatePageLinks();
     rememberRoom(room);
-    if(!isDebug){await request(`/api/rooms/${room}/session`);await request('/api/games',{method:'POST',headers:{'Idempotency-Key':createRequestId()},body:JSON.stringify({action:'register',room_id:room})});}
+    if(!isDebug){await request(`/api/rooms/${room}/session`);if(identity.role!=='player')await request('/api/games',{method:'POST',headers:{'Idempotency-Key':createRequestId()},body:JSON.stringify({action:'register',room_id:room})});}
     ready = true;
     if(new URLSearchParams(location.search).get('battle')==='1')showBattle();
     inventory?.reset(roster);
@@ -455,7 +471,7 @@ async function showGames(){
  if(isDebug)return;
  try{
   const data=await request('/api/games');
-  await heroes.refresh();
+  if(identity.role!=='player'){await heroes.refresh();await multiplayer.refresh();}
   $('#game-save').disabled=!ready||gameLocked();
   $('#game-scenario').replaceChildren(...data.scenarios.map(s=>new Option(s.name,s.id)));
   $('#games-list').replaceChildren(...data.games.map(game=>{
@@ -464,8 +480,8 @@ async function showGames(){
    const info=document.createElement('p');info.textContent=game.saved_at?'Точка сохранения: '+new Date(game.saved_at).toLocaleString('ru-RU'):'Прогресс сохраняется автоматически';row.append(title,info);
    const button=(text,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=text;b.disabled=gameLocked();b.addEventListener('click',fn);row.append(b);return b;};
    button('Продолжить',()=>switchGame(game.room_id));
-   if(game.has_save)button('Загрузить сохранение',()=>{if(confirm('Вернуться к точке сохранения «'+game.name+'»? Последующие действия будут отменены.'))runGame({action:'load',room_id:game.room_id});});
-   button('Удалить',()=>{if(confirm('Удалить игру «'+game.name+'» и её историю?'))runGame({action:'delete',room_id:game.room_id});});
+   if(identity.role!=='player'&&game.has_save)button('Загрузить сохранение',()=>{if(confirm('Вернуться к точке сохранения «'+game.name+'»? Последующие действия будут отменены.'))runGame({action:'load',room_id:game.room_id});});
+   if(identity.role!=='player')button('Удалить',()=>{if(confirm('Удалить игру «'+game.name+'» и её историю?'))runGame({action:'delete',room_id:game.room_id});});
    return row;
   }));
  }catch(e){$('#games-status').textContent=e.message;}
@@ -496,4 +512,4 @@ async function runGame(command){
 }
 $('#games-toggle')?.addEventListener('click',()=>{$('#games-menu').hidden=!$('#games-menu').hidden;if(!$('#games-menu').hidden){$('#combat-frame').contentWindow?.postMessage({type:'pause-for-game-menu'},location.origin);showGames();}});
 $('#game-save')?.addEventListener('click',()=>{if(ready)runGame({action:'save',room_id:room});});
-$('#game-create')?.addEventListener('submit',e=>{e.preventDefault();runGame({action:'create',name:$('#game-name').value,scenario:$('#game-scenario').value,hero_id:$('#game-hero').value});});
+$('#game-create')?.addEventListener('submit',e=>{e.preventDefault();runGame({action:'create',name:$('#game-name').value,scenario:$('#game-scenario').value,hero_id:$('#game-hero').value,...(multiplayer.party()?{party:multiplayer.party()}:{})});});

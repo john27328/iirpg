@@ -7,17 +7,20 @@ from .storage import MessageConflict
 from .roster import InventoryRules
 from .character_sheet import CharacterRules
 from .hero_library import HeroLibrary
+from .participants import Participants
+from .party import SETTINGS
 
 from .world import scenario, scenarios
 from .session_world import initialize
 
 SCENARIOS = scenarios()
-EXCLUDED = {'game_sessions','game_checkpoints','game_operations','ai_requests'}
+EXCLUDED = {'game_sessions','game_checkpoints','game_operations','ai_requests','session_participants','participant_operations'}
 
 class GameSessions:
     def __init__(self, adventure):
         self.adventure=adventure;self.store=adventure.store
         self.heroes=HeroLibrary(adventure.ai)
+        self.participants=Participants(adventure)
         with self.store._connection() as c:
             c.executescript('CREATE TABLE IF NOT EXISTS game_sessions(room_id TEXT PRIMARY KEY REFERENCES rooms(id),name TEXT NOT NULL,scenario TEXT NOT NULL,saved_at TEXT); CREATE TABLE IF NOT EXISTS game_checkpoints(room_id TEXT PRIMARY KEY REFERENCES rooms(id),body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS game_operations(id TEXT PRIMARY KEY,command TEXT NOT NULL,response TEXT NOT NULL);')
 
@@ -49,7 +52,7 @@ class GameSessions:
     def execute(self,command,key):
         try:UUID(key)
         except (ValueError,TypeError,AttributeError):raise ValueError('Нужен UUID операции.') from None
-        if set(command)-{'action','room_id','name','scenario','hero_id'}:raise ValueError('Неизвестные поля сеанса.')
+        if set(command)-{'action','room_id','name','scenario','hero_id','party'}:raise ValueError('Неизвестные поля сеанса.')
         encoded=json.dumps(command,sort_keys=True)
         with self.store._connection() as c:
             c.execute('BEGIN IMMEDIATE')
@@ -62,7 +65,11 @@ class GameSessions:
                 config=scenario(command.get('scenario'))
                 title=command.get('name','Новая игра')
                 if not isinstance(title,str) or not title.strip() or len(title)>100:raise ValueError('Название: от 1 до 100 символов.')
-                hero_id=command.get('hero_id')
+                party = command.get('party')
+                if party is not None:
+                    if not isinstance(party,list) or not 2 <= len(party) <= SETTINGS['max_players'] or any(not isinstance(p,dict) or set(p)!={'name','hero_id'} or not isinstance(p['hero_id'],str) for p in party):
+                        raise ValueError('Укажите игроков и шаблон героя для каждого в пределах лимита группы.')
+                hero_id=party[0]['hero_id'] if party else command.get('hero_id')
                 if 'hero_id' in command and not isinstance(hero_id,str):raise ValueError('Выберите готового героя.')
                 template=c.execute('SELECT body FROM hero_templates WHERE id=?',(hero_id,)).fetchone() if hero_id is not None else c.execute('SELECT body FROM hero_templates ORDER BY rowid LIMIT 1').fetchone()
                 if not template:raise ValueError('Выберите готового героя или создайте нового с помощником.')
@@ -80,6 +87,10 @@ class GameSessions:
                 state={'revision':1,'scenario_id':config['id'],'location':config['start'],'character_id':actor,'history':[{'player':'','gm':config['intro'],'action':'start'}]}
                 initialize(state)
                 c.execute('INSERT INTO adventures VALUES(?,?)',(room,json.dumps(state,ensure_ascii=False)));self.adventure.publish(c,room,state)
+                self.adventure.save(c,room,state)
+                if party:
+                    self.participants.add(c,room,party[0]['name'],character_id=actor)
+                    for member in party[1:]:self.participants.add(c,room,member['name'],member['hero_id'])
                 self.checkpoint(c,room)
             elif action in ('register','save','load','delete'):
                 self.store._require_room(c,room)
@@ -97,6 +108,12 @@ class GameSessions:
                             row=c.execute('SELECT body FROM game_checkpoints WHERE room_id=?',(room,)).fetchone()
                             if not row:raise ValueError('Сохранения пока нет.')
                             snapshot=json.loads(row[0])
+                            active={r['character_id'] for r in c.execute('SELECT character_id FROM session_participants WHERE room_id=?',(room,))}
+                            for encounter in snapshot.get('encounters',[]):
+                                battle=json.loads(encounter['body'])
+                                saved={f.get('character_id') for f in battle.get('fighters',[]) if f.get('team')=='players'}
+                                if active and battle.get('status')=='active' and active-saved:
+                                    raise ValueError('В этом сохранении бой начат до прихода новых игроков. Продолжите текущую игру и создайте новую точку сохранения для всей группы.')
                         revisions={}
                         for table in ('adventures','scenes','encounters'):
                             row=c.execute(f'SELECT body FROM {table} WHERE room_id=?',(room,)).fetchone()
@@ -104,6 +121,8 @@ class GameSessions:
                         roster=c.execute('SELECT revision FROM room_rosters WHERE room_id=?',(room,)).fetchone();revisions['room_rosters']=roster[0] if roster else 0
                         for table in reversed(tables):c.execute(f'DELETE FROM "{table}" WHERE room_id=?',(room,))
                         if action=='delete':
+                            c.execute('DELETE FROM participant_operations WHERE room_id=?',(room,))
+                            c.execute('DELETE FROM session_participants WHERE room_id=?',(room,))
                             for usage in c.execute("SELECT date(started,'unixepoch') AS day,COUNT(*) AS total FROM ai_requests WHERE room_id=? GROUP BY day",(room,)).fetchall():
                                 c.execute('INSERT INTO ai_deleted_usage VALUES(?,?) ON CONFLICT(day) DO UPDATE SET count=count+excluded.count',(usage['day'],usage['total']))
                             c.execute('DELETE FROM ai_requests WHERE room_id=?',(room,))
@@ -122,7 +141,9 @@ class GameSessions:
                                     if table=='room_rosters':row['revision']=max(row['revision'],revisions[table])+1
                                     keys=list(row);columns=','.join('"'+k+'"' for k in keys)
                                     c.execute(f'INSERT INTO "{table}" ({columns}) VALUES ({",".join("?" for _ in keys)})',[row[k] for k in keys])
+                if action=='load':self.participants.reconcile(c,room)
             else:raise ValueError('Неизвестная операция сеанса.')
             result={'room_id':room,'action':action}
+            if action=='create' and command.get('party'):result['players']=self.participants.list(room,c)['players']
             c.execute('INSERT INTO game_operations VALUES(?,?,?)',(key,encoded,json.dumps(result)))
             return result

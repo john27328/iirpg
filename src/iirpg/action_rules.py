@@ -11,8 +11,11 @@ RULES = json.loads((Path(__file__).with_name('rules') / 'actions_pf2e.json').rea
 
 
 def validate_proposal(value: object) -> dict:
-    if not isinstance(value, dict) or set(value) != {'intent', 'reply', 'steps'}:
+    required = {'intent', 'reply', 'steps'}
+    if not isinstance(value, dict) or not required <= set(value) or set(value) - required - {'voice'}:
         raise ValueError('Мастер вернул неверный формат плана.')
+    if 'voice' in value and value['voice'] not in ('gm', 'npc'):
+        raise ValueError('Неизвестный голос ответа мастера.')
     if value['intent'] not in ('question', 'act', 'clarify', 'cancel'):
         raise ValueError('Неизвестный тип намерения.')
     if not isinstance(value['reply'], str) or len(value['reply']) > 1600:
@@ -44,6 +47,13 @@ def shift_attitude(entity: dict, actor: str, delta: int) -> None:
 
 def tools(actor: dict, tag: str) -> list[dict]:
     return [i for i in actor.get('items', []) if tag in i.get('tags', []) and not i.get('broken')]
+
+
+def agreements_for(npc: dict, actor: str, now: int) -> list[dict]:
+    """Open promises coexist; the old single agreement remains readable."""
+    entries = [npc.get('agreements', {}).get(actor, {})]
+    entries.extend(c for c in npc.get('commitments', []) if c.get('actor') == actor)
+    return [entry for entry in entries if entry.get('expires', 0) > now]
 
 
 def prepare(world: dict, actor: dict, step: dict, inventory_rules: dict | None = None) -> dict:
@@ -97,6 +107,8 @@ def prepare(world: dict, actor: dict, step: dict, inventory_rules: dict | None =
         raise ValueError('Цель должна находиться рядом. Сначала подойдите к ней.')
     if target.get('hidden') and rule != 'seek':
         raise ValueError('Эта цель пока не обнаружена.')
+    if rule == 'aid' and target['kind'] == 'pc':
+        raise ValueError('Помощь одного героя другому пока не поддерживается в сюжетных проверках.')
     if rule in ('combat', 'make_impression', 'request', 'coerce', 'sense_motive', 'aid'):
         if target['kind'] != 'npc' or target.get('status', 'standing') != 'standing':
             raise ValueError('Этот персонаж сейчас не может участвовать в действии.')
@@ -137,13 +149,15 @@ def prepare(world: dict, actor: dict, step: dict, inventory_rules: dict | None =
                 raise ValueError('У героя больше нет этих монет.')
             if target.get('owner') != actor['id']:
                 raise ValueError('Этот предмет вам не принадлежит.')
-            if not recipient or recipient['kind'] != 'npc' or location(world, step['recipient']) != place or recipient.get('status') == 'defeated':
+            if not recipient or recipient['kind'] not in ('npc', 'pc') or location(world, step['recipient']) != place or recipient.get('status') == 'defeated':
                 raise ValueError('Получатель должен находиться рядом и быть в состоянии принять предмет.')
     if rule == 'aid':
         task = world['entities'].get(step.get('task'))
-        agreement = target.get('agreements', {}).get(actor['id'], {})
-        service = target.get('services', {}).get(agreement.get('service'), {})
-        if agreement.get('expires', 0) <= world.get('time', 0) or step.get('skill') not in service.get('skills', []):
+        def supports(agreement):
+            if agreement.get('description'):
+                return agreement.get('task') == step.get('task') and agreement.get('help_skill') == step.get('skill')
+            return step.get('skill') in target.get('services', {}).get(agreement.get('service'), {}).get('skills', [])
+        if not any(supports(agreement) for agreement in agreements_for(target, actor['id'], world.get('time', 0))):
             raise ValueError('Сначала получите согласие на такую помощь.')
         if not task or location(world, step['task']) != place:
             raise ValueError('Помощник должен находиться у места задачи.')
@@ -154,11 +168,16 @@ def prepare(world: dict, actor: dict, step: dict, inventory_rules: dict | None =
         return prepared
     skill = RULES[rule].get('skill')
     penalty = 0
+    adjustments = []
     if rule == 'force_open':
         if 'force_dc' not in target:
             raise ValueError('Здесь не задан силовой способ доступа. Уточните другой способ.')
         dc = target['force_dc']
-        penalty = (-2 if not any(i.get('state') == 'held' for i in tools(actor, 'crowbar')) else 0) + (-2 if target.get('jammed') else 0)
+        if not any(i.get('state') == 'held' for i in tools(actor, 'crowbar')):
+            adjustments.append({'label': 'Без лома в руках', 'value': -2})
+        if target.get('jammed'):
+            adjustments.append({'label': 'Механизм заклинило после критического провала', 'value': -2})
+        penalty = sum(change['value'] for change in adjustments)
     elif rule == 'pick_lock':
         if not target.get('locked') or not target.get('lock'):
             raise ValueError('Замок уже открыт или отсутствует. Можно открыть объект без броска.')
@@ -173,16 +192,37 @@ def prepare(world: dict, actor: dict, step: dict, inventory_rules: dict | None =
         dc = target['lock']['dc']
     elif rule in ('request', 'coerce'):
         offered = target.get('services', {})
-        if not step.get('service'):
-            choices = [key for key, value in offered.items() if value.get('acceptable') and not value.get('harmful')]
-            if len(choices) == 1:
-                step['service'] = choices[0]
-                prepared['step']['service'] = choices[0]
-        service = offered.get(step.get('service'))
-        if not service or not service.get('acceptable') or service.get('harmful'):
-            raise ValueError('Нужно уточнить приемлемую услугу. Бросок не заставит выполнить любое требование.')
-        agreement = target.get('agreements', {}).get(actor['id'], {})
-        if rule == 'request' and agreement.get('service') == step.get('service') and agreement.get('expires', 0) > world.get('time', 0):
+        if not step.get('service') and step.get('method', '').strip():
+            task = step.get('task', '')
+            # A social check's own Diplomacy/Intimidation is not a promise of
+            # Aid. Without a task the optional skill field has no help effect.
+            help_skill = step.get('skill', '') if task else ''
+            if not task:
+                prepared['step']['skill'] = ''
+            if task and task not in world['entities']:
+                raise ValueError('Нужно указать существующий объект помощи.')
+            if help_skill and (not task or help_skill not in actor.get('stats', {})):
+                raise ValueError('Для помощи укажите объект задачи и существующий навык.')
+            service = {'name': step['method'].strip(), 'task': task, 'help_skill': help_skill,
+                       'follow': bool(task and help_skill)}
+            prepared['commitment'] = service
+        else:
+            # Compatibility for existing plans and frozen checks. New GM plans
+            # describe the request directly; authors need not enumerate services.
+            if not step.get('service'):
+                choices = [key for key, value in offered.items() if value.get('acceptable') and not value.get('harmful')]
+                if len(choices) == 1:
+                    step['service'] = choices[0]
+                    prepared['step']['service'] = choices[0]
+            service = offered.get(step.get('service'))
+            if not service or not service.get('acceptable') or service.get('harmful'):
+                raise ValueError('Опишите, о чём вы просите собеседника. Бросок не заставит выполнить любое требование.')
+        def matches(agreement):
+            if prepared.get('commitment'):
+                return (agreement.get('description') == service['name'] and agreement.get('task', '') == service.get('task', '')
+                        and agreement.get('help_skill', '') == service.get('help_skill', ''))
+            return agreement.get('service') == step.get('service')
+        if rule == 'request' and any(matches(a) for a in agreements_for(target, actor['id'], world.get('time', 0))):
             prepared['already_agreed'] = True
             return prepared
         if rule == 'request' and attitude(target, actor['id']) not in ('friendly', 'helpful'):
@@ -204,6 +244,10 @@ def prepare(world: dict, actor: dict, step: dict, inventory_rules: dict | None =
         dc = target['detection_dc']
     elif rule == 'improvise':
         ruling = target.get('affordances', {}).get(step.get('method'))
+        if not ruling and step.get('method', '').strip() and step.get('skill') == 'athletics' and target.get('kind') == 'container' and 'force_dc' in target:
+            # A new fictional method can use an existing mechanical resolution;
+            # no per-rope/per-lever/per-shelf scenario entry is required.
+            return prepare(world, actor, {**step, 'rule': 'force_open'}, inventory_rules)
         if not ruling or ruling.get('effect') not in ('open', 'reveal'):
             raise ValueError('Для этого необычного способа пока нет проверяемого эффекта. Уточните цель и способ; мастер не будет выдумывать исполнение.')
         skill, dc = ruling['skill'], ruling['dc']
@@ -212,7 +256,8 @@ def prepare(world: dict, actor: dict, step: dict, inventory_rules: dict | None =
         return prepared
     if skill not in actor.get('stats', {}):
         raise ValueError('Этот навык недоступен персонажу.')
-    prepared.update(skill=skill, dc=dc, modifier=actor['stats'][skill] + penalty)
+    prepared.update(skill=skill, dc=dc, modifier=actor['stats'][skill] + penalty,
+                    modifier_breakdown=[{'label': 'Навык героя', 'value': actor['stats'][skill], 'character_id': actor['id']}, *adjustments])
     return prepared
 
 
@@ -227,15 +272,19 @@ def apply(world: dict, action: dict, outcome: int | None = None) -> dict:
         raise ValueError('Сначала нужен результат проверки.')
     world['time'] = world.get('time', 0) + action['seconds']
     if rule == 'move':
-        world['entities'][actor]['place'] = action['destination']
+        origin = location(world, actor)
+        travellers = world.get('party', [actor]) if world.get('party_mode') == 'together' else [actor]
+        for traveller in travellers:
+            world['entities'][traveller]['place'] = action['destination']
         for npc in world['entities'].values():
-            npc.get('impressions', {}).pop(actor, None)
-        for npc in world['entities'].values():
-            agreement = npc.get('agreements', {}).get(actor, {})
-            service = npc.get('services', {}).get(agreement.get('service'), {})
-            if npc.get('status', 'standing') == 'standing' and service.get('follow') and agreement.get('expires', 0) > world['time']:
-                npc['place'] = action['destination']
-        result['text'] = 'Вы переходите: ' + ' → '.join(world['places'][p]['name'] for p in action['route'][1:] or action['route']) + '.'
+            for traveller in travellers:
+                npc.get('impressions', {}).pop(traveller, None)
+                follows = any(npc.get('services', {}).get(a.get('service'), {}).get('follow') or
+                              (a.get('follow') and npc.get('place') == origin)
+                              for a in agreements_for(npc, traveller, world['time']))
+                if npc.get('status', 'standing') == 'standing' and follows:
+                    npc['place'] = action['destination']
+        result['text'] = ('Группа переходит: ' if len(travellers) > 1 else 'Вы переходите: ') + ' → '.join(world['places'][p]['name'] for p in action['route'][1:] or action['route']) + '.'
     elif rule == 'look':
         result['text'] = target.get('description', world['places'][location(world, actor)]['description'])
     elif rule == 'open':
@@ -279,8 +328,19 @@ def apply(world: dict, action: dict, outcome: int | None = None) -> dict:
             result['text'] = name + ': согласие на эту услугу уже получено и продолжает действовать.'
             return result
         if outcome >= 2:
-            target.setdefault('agreements', {})[actor] = {'service': step['service'], 'expires': world['time'] + 86400, 'coerced': rule == 'coerce'}
-            result['text'] = name + ': соглашается — ' + target['services'][step['service']]['name'] + '.'
+            if action.get('commitment'):
+                commitment = action['commitment']
+                terms = {'description': commitment['name'], 'task': commitment['task'],
+                         'help_skill': commitment['help_skill'], 'follow': commitment['follow']}
+                label = commitment['name']
+            else:
+                terms = {'service': step['service']}
+                label = target['services'][step['service']]['name']
+            target.setdefault('agreements', {})[actor] = {**terms, 'expires': world['time'] + 86400, 'coerced': rule == 'coerce'}
+            if action.get('commitment'):
+                previous = [c for c in target.get('commitments', []) if c['expires'] > world['time']]
+                target['commitments'] = (previous + [{'actor': actor, **target['agreements'][actor]}])[-32:]
+            result['text'] = name + ': соглашается — ' + label + '.'
             if outcome == 2:
                 result['text'] += ' Условие: только оговорённая услуга, без опасности для помощника.'
         else:

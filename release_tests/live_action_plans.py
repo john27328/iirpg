@@ -16,11 +16,20 @@ from iirpg.dice import DiceTool
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--live',action='store_true',required=True)
-    parser.add_argument('--case',choices=['book','gate','social','boundaries','all'],default='all')
+    parser.add_argument('--model',help='Explicit free session model override')
+    parser.add_argument('--reasoning',action='store_true')
+    parser.add_argument('--reasoning-tokens',type=int)
+    parser.add_argument('--case',choices=['book','gate','social','boundaries','open','all'],default='all')
     args=parser.parse_args()
+    if args.model and not (args.model.endswith(':free') or args.model=='openrouter/free'):
+        parser.error('Only free models are allowed.')
+    if args.reasoning_tokens is not None and not 128<=args.reasoning_tokens<=2048:parser.error('Reasoning budget must be 128–2048.')
     path=Path('.local') / ('action-eval-'+str(int(time.time()))+'.sqlite3')
     server=ChatHTTPServer(('127.0.0.1',0),path)
-    report={'model':server.ai.config['model'],'database':str(path),'cases':[]}
+    if args.model:server.ai.config['session_model']=args.model
+    if args.reasoning or args.reasoning_tokens is not None:server.ai.config['session_reasoning']=True
+    if args.reasoning_tokens is not None:server.ai.config['session_reasoning_tokens']=args.reasoning_tokens
+    report={'model':server.ai.config.get('session_model',server.ai.config['model']),'database':str(path),'cases':[]}
     def game(identifier):
         hero=server.games.heroes.list()['heroes'][0]['id']
         room=server.games.execute({'action':'create','scenario':identifier,'hero_id':hero,'name':'Проверка игроком'},str(uuid4()))['room_id']
@@ -108,8 +117,28 @@ def main():
         assert state.get('pending_check',{}).get('prepared_action',{}).get('rule')=='make_impression',state['history'][-1]['gm']
         assert state['pending_check']['prepared_action']['target']=='stablehand'
         state=roll(room,state,20)
+    def open_requests():
+        room,actor=game('missing-book')
+        state=turn(room,actor,'Хозяйка, прошу не называть моего имени другим постояльцам. Мне нужна твоя осторожность, пока я ищу сестру.')
+        assert state.get('pending_check',{}).get('prepared_action',{}).get('commitment'),state['history'][-1]['gm']
+        assert not state['world']['entities']['hostess'].get('services')
+        state=roll(room,state)
+        state=turn(room,actor,'Ещё одна просьба: встреться со мной вечером во дворе, чтобы спокойно поговорить без посторонних.')
+        assert state.get('pending_check',{}).get('prepared_action',{}).get('commitment'),state['history'][-1]['gm']
+        state=roll(room,state)
+        assert len(state['world']['entities']['hostess']['commitments'])==2
+        state=turn(room,actor,'Убираю оружие и щит, иду в кладовую и пробую открыть сундук плечом, упираясь под край крышки.')
+        assert state.get('pending_check',{}).get('skill')=='athletics',state['history'][-1]['gm']
+        assert state['pending_check']['dc']==state['world']['entities']['chest']['force_dc']
+        state=roll(room,state)
+        assert state['world']['entities']['chest']['open'] and not state['book']
+        state=turn(room,actor,'Возвращаюсь к хозяйке в зал.')
+        assert state['location']=='hall',state['history'][-1]['gm']
+        state=turn(room,actor,'Ты помнишь две наши договорённости? Сейчас только разговариваю.')
+        assert state['location']=='hall' and 'pending_check' not in state,state['history'][-1]['gm']
+        assert len(state['world']['entities']['hostess']['commitments'])==2
     try:
-        for name,fn in [('book',book),('gate',gate),('social',social),('boundaries',boundaries)]:
+        for name,fn in [('book',book),('gate',gate),('social',social),('boundaries',boundaries),('open',open_requests)]:
             if args.case in ('all',name):run(name,fn)
     finally:server.server_close()
     print(json.dumps({'passed':all(c['passed'] for c in report['cases']),'cases':[(c['name'],c['passed']) for c in report['cases']]},ensure_ascii=False),flush=True)
