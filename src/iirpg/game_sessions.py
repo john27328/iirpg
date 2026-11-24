@@ -91,6 +91,12 @@ class GameSessions:
                 if party:
                     self.participants.add(c,room,party[0]['name'],character_id=actor)
                     for member in party[1:]:self.participants.add(c,room,member['name'],member['hero_id'])
+                advance = config.get('starting_coins_cp', 0)
+                if advance:
+                    for row in c.execute('SELECT id,body FROM characters WHERE room_id=?', (room,)).fetchall():
+                        body = json.loads(row['body'])
+                        body['coins'] = min(10000000, body['coins'] + advance)
+                        c.execute('UPDATE characters SET body=? WHERE room_id=? AND id=?', (json.dumps(body, ensure_ascii=False), room, row['id']))
                 self.checkpoint(c,room)
             elif action in ('register','save','load','delete'):
                 self.store._require_room(c,room)

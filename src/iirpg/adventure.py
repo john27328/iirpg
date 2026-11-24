@@ -243,6 +243,7 @@ class AdventureStore:
                 break
             participant = state['world']['entities'].get(action['target'], {})
             if participant.get('kind') == 'npc': state['conversation_with'] = action['target']
+            if action.get('trade'): state['conversation_with'] = action['trade']['merchant_id']
             if action.get('skill'):
                 player_aid = take_player_aid(state['world'], actor, action)
                 aid = aid_roll(state['world'], actor, action, self.ai.combat.roll_die) if not player_aid else None
@@ -607,7 +608,7 @@ class AdventureStore:
             if reaction:
                 prompt_context = {k: v for k, v in prompt_context.items() if k in (
                     'hero', 'hero_id', 'shared_party', 'conversation_partner', 'gm_knowledge', 'observations',
-                    'history', 'recollections', 'pending_check', 'location_id', 'phase', 'confirmed_results', 'last_check_resolution', 'player')}
+                    'history', 'recollections', 'pending_check', 'location_id', 'phase', 'confirmed_results', 'last_check_resolution', 'trade', 'player')}
                 prompt_context = fit_context(story_narration.narrative_scope(prompt_context, state['world']), budget)
             payload = {'model': self.ai.config.get('session_model', self.ai.config['model']), 'messages': [{'role': 'system', 'content': story_narration.prompt_for(prompt_context, reaction=True) if reaction else PLANNER_PROMPT}, {'role': 'user', 'content': json.dumps(prompt_context, ensure_ascii=False)}],
                        'max_tokens': 4096 if self.ai.config.get('session_reasoning') else 1800, 'temperature': 0.2,
@@ -636,6 +637,12 @@ class AdventureStore:
                 actor, roster = self.actor(c, room, command.get('character_id'))
                 initialize(state, actor)
                 self.sync_inventory(c, room, state)
+                interlocutor = proposal.get('interlocutor')
+                if interlocutor:
+                    npc = state['world']['entities'].get(interlocutor, {})
+                    if npc.get('kind') != 'npc' or location(state['world'], interlocutor) != state['location'] or npc.get('status', 'standing') not in ('standing', 'surrendered'):
+                        raise ValueError('Выбранный собеседник не находится рядом.')
+                    state['conversation_with'] = interlocutor
                 entry = {'place_id': state['location'], 'listeners': [k for k, v in state['world']['entities'].items() if v['kind'] == 'npc' and location(state['world'], k) == state['location']], 'player': '' if reaction else text, 'gm': proposal['reply'], 'action': 'reaction' if reaction else proposal['intent'], 'player_request_id': key,'character_id':actor['id'],'actor_name':actor['name'],'player_id':actor.get('player_id'),'player_name':next((p['name'] for p in roster['players'] if p['id']==actor.get('player_id')),None)}
                 entry['voice'] = proposal.get('voice', 'npc')
                 if proposal['intent'] == 'cancel':

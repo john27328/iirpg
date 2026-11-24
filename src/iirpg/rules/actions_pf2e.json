@@ -171,6 +171,41 @@
       "required_fields": [
         "target"
       ]
+    },
+    "buy": {
+      "summary": "Купить существующий товар по подтверждённой личной цене; target=товар. Без броска, оплата и вещь одновременно.",
+      "required_fields": [
+        "target"
+      ],
+      "label": "Купить",
+      "house_rule": true
+    },
+    "sell": {
+      "summary": "Продать свою вещь с известной ценой: target=вещь, recipient=торговец. Скупка за половину цены при наличии денег.",
+      "required_fields": [
+        "target",
+        "recipient"
+      ],
+      "label": "Продать",
+      "house_rule": true
+    },
+    "bargain": {
+      "summary": "Явный торг за конкретный товар: target=товар. Дипломатия против Will DC; предложение только этому герою на 10 минут, без покупки и смены отношения.",
+      "required_fields": [
+        "target"
+      ],
+      "skill": "diplomacy",
+      "seconds": 60,
+      "stop_after_check": true,
+      "label": "Торг",
+      "house_rule": true
+    },
+    "talk": {
+      "summary": "Обратиться к существующему присутствующему NPC с обычным вопросом после движения. Без броска, изменения отношения, услуги и согласия.",
+      "required_fields": [
+        "target"
+      ],
+      "label": "Разговор"
     }
   }
 }

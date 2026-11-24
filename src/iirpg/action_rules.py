@@ -13,8 +13,10 @@ AID_DC = RULES['aid'].get('dc', 15)
 
 def validate_proposal(value: object) -> dict:
     required = {'intent', 'reply', 'steps'}
-    if not isinstance(value, dict) or not required <= set(value) or set(value) - required - {'voice'}:
+    if not isinstance(value, dict) or not required <= set(value) or set(value) - required - {'voice', 'interlocutor'}:
         raise ValueError('Мастер вернул неверный формат плана.')
+    if 'interlocutor' in value and (not isinstance(value['interlocutor'], str) or len(value['interlocutor']) > 120):
+        raise ValueError('Неверная ссылка на собеседника.')
     if 'voice' in value and value['voice'] not in ('gm', 'npc'):
         raise ValueError('Неизвестный голос ответа мастера.')
     if value['intent'] not in ('question', 'act', 'clarify', 'cancel'):
@@ -108,6 +110,13 @@ def prepare(world: dict, actor: dict, step: dict, inventory_rules: dict | None =
         raise ValueError('Цель должна находиться рядом. Сначала подойдите к ней.')
     if target.get('hidden') and rule != 'seek':
         raise ValueError('Эта цель пока не обнаружена.')
+    if rule in ('buy', 'sell', 'bargain'):
+        from .trade import prepare_trade
+        return prepare_trade(world, actor, step, inventory_rules)
+    if rule == 'talk':
+        if target['kind'] != 'npc' or target.get('status', 'standing') not in ('standing', 'surrendered'):
+            raise ValueError('Этот персонаж сейчас не может отвечать.')
+        return prepared
     if rule == 'aid' and target['kind'] == 'pc':
         if key == actor['id']:
             raise ValueError('Нельзя помогать самому себе.')
@@ -283,7 +292,10 @@ def apply(world: dict, action: dict, outcome: int | None = None) -> dict:
     if action.get('skill') and outcome is None:
         raise ValueError('Сначала нужен результат проверки.')
     world['time'] = world.get('time', 0) + action['seconds']
-    if rule == 'move':
+    if rule in ('buy', 'sell', 'bargain'):
+        from .trade import apply_trade
+        result = apply_trade(world, action, outcome)
+    elif rule == 'move':
         origin = location(world, actor)
         travellers = world.get('party', [actor]) if world.get('party_mode') == 'together' else [actor]
         for traveller in travellers:
@@ -299,6 +311,8 @@ def apply(world: dict, action: dict, outcome: int | None = None) -> dict:
         result['text'] = ('Группа переходит: ' if len(travellers) > 1 else 'Вы переходите: ') + ' → '.join(world['places'][p]['name'] for p in action['route'][1:] or action['route']) + '.'
     elif rule == 'look':
         result['text'] = target.get('description', world['places'][location(world, actor)]['description'])
+    elif rule == 'talk':
+        result['text'] = 'Вы обращаетесь к ' + name + '.'
     elif rule == 'open':
         target['open'] = True
         result['text'] = name + ': открыто.'

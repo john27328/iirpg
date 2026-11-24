@@ -112,6 +112,13 @@ def sync_inventory(c, room: str, state: dict, roster: dict) -> None:
 
 def persist_effects(c, room: str, state: dict, actor: dict, effects: list, roster_rules: dict) -> None:
     for effect in effects:
+        if effect['type'] == 'coins':
+            balance = actor['coins'] + effect['delta']
+            if not 0 <= balance <= 10000000:
+                raise ValueError('Недопустимый остаток монет после сделки.')
+            actor['coins'] = balance
+            save_character(c, room, actor)
+            continue
         if effect['type'] == 'item_state':
             row = c.execute('SELECT body FROM inventory_items WHERE room_id=? AND id=? AND character_id=?', (room, effect['item'], actor['id'])).fetchone()
             if not row: raise ValueError('Предмета больше нет в инвентаре.')

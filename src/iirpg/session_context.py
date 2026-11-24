@@ -21,10 +21,13 @@ hero/hero_id — персонаж ИГРОКА, не ты. Никогда не �
 Если аудитория старой записи неизвестна, не выдавай её за личное воспоминание другого NPC.
 В shared_party другие герои управляются своими игроками. Не говори и не принимай решения за них.
 
-Верни JSON {intent, reply, steps, voice}. intent: question, act, clarify или cancel.
+Верни JSON {intent, reply, steps, voice, interlocutor}. intent: question, act, clarify или cancel.
+interlocutor — ID присутствующего NPC, к которому обращается игрок, либо пустая строка.
+При явном обращении к другому NPC выбирай его, а не прежнего conversation_partner. Это только выбор собеседника, без согласия или движения.
 voice=gm для вопросов о механике: возможность действия, навык, инструменты, КС, бросок, способности.
 Такой вопрос требует точного ответа мастера, а не придуманной реплики NPC. Укажи известные условия в reply.
 voice=npc для обычного разговора с персонажем, личных вопросов, воспоминаний, рассказа о его наблюдениях.
+Обычный вопрос торговцу о цене или выборе товара — voice=npc: ответит сам торговец по фактам trade.
 Для act/clarify/cancel voice=gm. voice не даёт права совершить действие.
 question = разговор, осмотр глазами, вопрос о возможности: steps=[]. Обычный вопрос NPC не требует броска.
 clarify = действительно неясная цель или способ: steps=[]. cancel = отмена ожидающей попытки: steps=[].
@@ -35,6 +38,8 @@ act = только явно заявленные действия, в поряд
 Не добавляй приготовления и действия «на всякий случай». Разговор НЕ требует убирать оружие или щит.
 Явное «иду в X и делаю Y» = move(X), Y, без повторного разрешения. После move цель уже будет рядом.
 Упоминание удалённого места в разговоре НЕ означает переход туда.
+«Иду к NPC и спрашиваю о чём-то» = move(NPC), talk(NPC), без Request и без проверки отношения.
+talk только выбирает собеседника для вопроса после движения. Вопрос о знаниях/совете не является просьбой об услуге.
 «Прошу помочь открыть дверь в башне» = request(текущий собеседник, method="помочь открыть дверь", task=дверь, skill="athletics"), БЕЗ move/open/force_open.
 «Иду к сторожу и угрожаю помочь с дверью» = move(сторож), coerce(сторож, method=содержание требования, task=дверь, skill="athletics").
 request/coerce: target — NPC, method — краткое содержание СВОБОДНОЙ просьбы или требования, service="".
@@ -46,7 +51,12 @@ request/coerce: target — NPC, method — краткое содержание �
 Учитывай attitude_to_hero: helpful действительно готов помогать, friendly расположен доброжелательно.
 Не сочиняй опасность или запрет, чтобы отказать в обычном содействии. Уже действующее согласие учитывай без нового броска.
 Если просит помочь с проверкой: task — ID объекта, skill — навык помощи (например athletics), не Diplomacy самой просьбы.
-Если это обещание без проверки навыка, task/skill пустые. recipient нужен только для give.
+Если это обещание без проверки навыка, task/skill пустые. recipient нужен для give и sell.
+Торговля: buy(target=товар), sell(target=своя вещь, recipient=торговец), bargain(target=товар).
+Вопрос о цене/товарах — question без сделки. Явное «покупаю/продаю/торгуюсь за вещь» — соответствующий шаг.
+Не заменяй buy на take/give/request. bargain даёт личное предложение, не покупает товар и не меняет отношение.
+Цены, деньги и доступность берутся из trade; все amounts в медных монетах. Нет цены — не придумывай её.
+Не назначай проверку отношения за обычную покупку. Деньги и эффект лечения/ремонта не возникают из реплики NPC.
 make_impression — явная попытка расположить к себе; просьба помочь — request, а не автоматическое знакомство.
 Извинение/«ты» относится к conversation_partner, упоминание третьего лица как причины не меняет адресата.
 Ответ NPC на социальную проверку останавливает план. Помощь ещё не означает, что герой пошёл работать.
@@ -82,7 +92,10 @@ PLANNER_PROMPT = '''Ты разбираешь последнюю заявку и
 Сначала определи, что игрок явно делает. Не подменяй попытку действия ответом или отказом персонажа.
 Если он пытается расположить к себе — make_impression; просит содействия — request;
 угрожает — coerce; идёт и делает — оба шага; применяет способность — cast даже если она недоступна.
-Условия, броски и согласие проверит движок. NPC может не согласиться по результату, но попытку нельзя пропускать.
+Исключение: если просьба прямо противоречит явно заданной принципиальной границе в personality.boundaries,
+например подделать запись или раскрыть чужую тайну, верни question, voice=npc, steps=[] и interlocutor=этот NPC.
+Это содержательный отказ без броска; friendly/helpful не отменяет принципов. Не придумывай новые границы для обычной просьбы.
+Во всех остальных случаях условия, броски и согласие проверит движок. NPC может не согласиться по результату, но попытку нельзя пропускать.
 Обычный разговор и вопрос о возможности — question без шагов. Не путай вопрос с попыткой.
 Простое представление («меня зовут…», «я ищу родственника», «я согласен на награду») — обычный разговор.
 Оно не является Make an Impression. Не требуй броска за сообщение личной истории или обмен репликами героев.
@@ -97,9 +110,10 @@ reply читает игрок: пиши обычным русским языко
 
 
 def context(state: dict, actor: dict, text: str, reaction: bool = False) -> dict:
+    from .trade import trade_view
     world = state['world']; place = state['location']
     party_ids=set(members(state))
-    npcs = {key: {**{k: deepcopy(v) for k, v in value.items() if k in ('name', 'knowledge', 'goals', 'status', 'agreements', 'commitments', 'coerce_immunity', 'memories', 'personality')}, 'attitude_to_hero': attitude(value, actor['id'])}
+    npcs = {key: {**{k: deepcopy(v) for k, v in value.items() if k in ('name', 'role', 'knowledge', 'goals', 'status', 'agreements', 'commitments', 'coerce_immunity', 'memories', 'personality')}, 'attitude_to_hero': attitude(value, actor['id'])}
             for key, value in world['entities'].items() if value['kind'] == 'npc' and location(world, key) == place}
     relevant = {}
     for key, value in world['entities'].items():
@@ -145,6 +159,7 @@ def context(state: dict, actor: dict, text: str, reaction: bool = False) -> dict
             'inventory': [{**{k: deepcopy(v) for k, v in item.items() if k in ('name', 'state', 'hands', 'required_hands', 'tags', 'broken', 'quantity')}, 'id': item_refs.get(item['id'], item['id'])} for item in actor.get('items', [])], 'skills': actor['stats'], 'character_build': describe(actor),
             'history': recent, 'recollections': recalled, 'pending_check': pending,
             'prepared_aid': deepcopy(world.get('aid', {})),
+            'trade': trade_view(world, actor),
             'plan': {k: v for k, v in state.get('plan', {}).items() if k in ('status', 'reason', 'original_text', 'index')}, 'rule_catalog': {key: {k: v for k, v in spec.items() if k in ('summary', 'skill', 'seconds', 'required_fields')} for key, spec in RULES.items()},
             'phase': 'AFTER_ROLL' if reaction else 'PLAYER_TURN',
             'last_check_resolution': resolution,
@@ -161,9 +176,10 @@ def schema(state: dict) -> dict:
     return {'type': 'object', 'properties': {
         'intent': {'type': 'string', 'enum': ['question', 'act', 'clarify', 'cancel']},
         'reply': {'type': 'string'}, 'voice': {'type': 'string', 'enum': ['gm', 'npc']},
+        'interlocutor': {'type': 'string', 'enum': ['', *[k for k, v in entities.items() if v['kind'] == 'npc' and location(state['world'], k) == state['location']]]},
         'steps': {'type': 'array', 'maxItems': 8, 'items': {'type': 'object', 'properties': properties,
                   'required': list(properties), 'additionalProperties': False}}},
-        'required': ['intent', 'reply', 'steps', 'voice'], 'additionalProperties': False}
+        'required': ['intent', 'reply', 'steps', 'voice', 'interlocutor'], 'additionalProperties': False}
 
 
 def repeats_previous_reply(proposal: dict, history: list[dict], text: str) -> bool:

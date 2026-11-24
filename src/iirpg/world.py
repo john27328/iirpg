@@ -10,6 +10,9 @@ def scenario(identifier: str = 'missing-book') -> dict:
     if not isinstance(identifier, str) or identifier not in {p.stem for p in SCENARIOS.glob('*.json')}:
         raise ValueError('Неизвестный сценарий.')
     value = json.loads((SCENARIOS / (identifier + '.json')).read_text())
+    advance = value.get('starting_coins_cp', 0)
+    if type(advance) is not int or not 0 <= advance <= 10000000:
+        raise ValueError('Начальные деньги сценария должны быть целым числом медных монет.')
     validate(value['world'])
     return value
 

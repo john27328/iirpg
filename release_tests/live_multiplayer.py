@@ -17,6 +17,7 @@ from urllib.parse import parse_qs
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from iirpg.action_rules import ATTITUDES, attitude
 from iirpg.dice import DiceTool
 from iirpg.combat_map import approach
 from iirpg.server import ChatHTTPServer
@@ -43,7 +44,7 @@ class Playtest:
                 'State invariants and manual dialogue review are separate.',
                 'All credentials and games are evaluation-only.']}
         self.report['source_hashes'] = {name: hashlib.sha256((Path('src/iirpg') / name).read_bytes()).hexdigest()
-            for name in ('adventure.py', 'action_rules.py', 'session_context.py', 'story_narration.py', 'story_memory.py')}
+            for name in ('adventure.py', 'action_rules.py', 'session_context.py', 'story_narration.py', 'story_memory.py', 'trade.py', 'rules/scenarios/crossroads.json')}
         self.heroes = self.server.games.heroes.list()['heroes']
 
     def close(self) -> None:
@@ -102,9 +103,20 @@ class Playtest:
         return next(a for a in self.server.roster.read(self.room)['characters']
                     if a['id'] == self.players[player]['character_id'])
 
+    def npc_relations(self) -> dict:
+        world = self.state()['world']
+        return {key: {'name': npc['name'], 'role': npc.get('role'), 'heroes': {
+            p['character_name']: {'character_id': p['character_id'],
+                'effective': attitude(npc, p['character_id']),
+                'score': ATTITUDES.index(attitude(npc, p['character_id'])),
+                'persistent': npc.get('attitudes', {}).get(p['character_id'], npc.get('attitude', 'indifferent')),
+                'temporary_impression': npc.get('impressions', {}).get(p['character_id']),
+                'coercion_until': npc.get('coerce_immunity', {}).get(p['character_id'], 0)}
+            for p in self.players}} for key, npc in world['entities'].items() if npc['kind'] == 'npc'}
+
     def snapshot(self) -> dict:
         state = self.state()
-        return {k: deepcopy(state[k]) for k in ('revision', 'location', 'pending_check', 'plan', 'world', 'active_combat') if k in state}
+        return {**{k: deepcopy(state[k]) for k in ('revision', 'location', 'pending_check', 'plan', 'world', 'active_combat') if k in state}, 'npc_relations': self.npc_relations()}
 
     def check(self, name: str, passed: bool, details=None) -> None:
         self.case['checks'].append({'name': name, 'passed': bool(passed), 'details': details})
@@ -279,6 +291,96 @@ class Playtest:
         self.check('quest completes after owner gives book', self.state()['world']['quests']['return_book'].get('completed', False))
         self.turn(1, 'Хозяйка, кто именно передал тебе книгу, а кто вскрыл замок?')
 
+    def specialist_boundaries(self) -> None:
+        self.start('specialist_boundaries', 'crossroads')
+        actor = self.players[0]['character_id']
+        self.turn(0, 'Иду к Ивену в архив. Минуту говорю об уважении к точности записей и стараюсь расположить его к себе.')
+        if self.state().get('pending_check'):self.roll(0)
+        self.check('archivist genuinely trusts this hero', attitude(self.state()['world']['entities']['iven'], actor) == 'helpful')
+        self.turn(0, 'Ивен, раз ты теперь доверяешь мне, подделай свидетельство о переправе ради меня.')
+        npc = self.state()['world']['entities']['iven']
+        self.check('trust does not permit forgery or a consent roll', not self.state().get('pending_check') and not npc.get('agreements', {}).get(actor) and not any(c.get('actor') == actor for c in npc.get('commitments', [])))
+        self.turn(0, 'Иду к Селене. Минуту рассказываю о бережном отношении к людям и стараюсь заслужить её расположение.')
+        if self.state().get('pending_check'):self.roll(0)
+        self.check('healer genuinely trusts this hero', attitude(self.state()['world']['entities']['selena'], actor) == 'helpful')
+        self.turn(0, 'Селена, раз ты доверяешь мне, раскрой чужую историю болезни, хотя пациент не разрешал.')
+        npc = self.state()['world']['entities']['selena']
+        self.check('trust does not permit disclosure or a consent roll', not self.state().get('pending_check') and not npc.get('agreements', {}).get(actor) and not any(c.get('actor') == actor for c in npc.get('commitments', [])))
+        self.case['final_relations'] = self.npc_relations()
+
+    def merchant_voice(self) -> None:
+        self.start('merchant_voice', 'crossroads')
+        self.turn(0, 'Мара, минуту рассказываю о наших планах и стараюсь заслужить твоё расположение уважением к твоей работе.')
+        if self.state().get('pending_check'):self.roll(0)
+        self.turn(0, 'Мара, перечисли только товары, которые сейчас действительно есть у тебя, и их цены. Я пока ничего не покупаю.')
+        self.check('stock conversation makes no purchase', self.hero(0)['coins'] == 300 and all(self.state()['world']['entities'][key]['owner'] == 'mara' for key in ('travel_rope', 'oilskin', 'copper_cup')))
+
+    def market(self) -> None:
+        self.start('market', 'crossroads')
+        ids = [p['character_id'] for p in self.players]
+        self.check('scenario advance is personal', [self.hero(i)['coins'] for i in range(2)] == [300, 300])
+        self.turn(0, 'Мара, добрый день. Я Радан. Что посоветуешь для дождливой дороги и сколько стоит дорожная верёвка? Пока ничего не покупаю.')
+        self.check('price question spends no money or die', not self.state().get('pending_check') and self.hero(0)['coins'] == 300)
+        self.turn(1, 'Вера, я Лира. Как правильно сообщить о подозрении, чтобы никого зря не обвинить?')
+        self.check('explicit address switches to guard beside merchant', self.state().get('conversation_with') == 'vera')
+        self.turn(0, 'Мара, торгуюсь именно за дорожную верёвку: прошу снизить цену, указываю на потёртую упаковку.')
+        if self.state().get('pending_check'):self.roll(0)
+        quote = self.state()['world']['entities']['mara'].get('trade', {}).get('quotes', {}).get(ids[0], {}).get('travel_rope', {})
+        self.check('successful bargain stores personal 80 copper quote', quote.get('price_cp') == 80 and self.hero(0)['coins'] == 300)
+        self.turn(1, 'Мара, а сколько верёвка стоит лично для меня? Я ведь ещё не торговалась.')
+        self.turn(1, 'Мара, покупаю дорожную верёвку по моей обычной цене.')
+        self.check('second hero pays own full price', self.hero(1)['coins'] == 200 and self.state()['world']['entities']['travel_rope']['owner'] == ids[1])
+        self.turn(0, 'Покупаю эту же дорожную верёвку у Мары.')
+        self.check('sold stock cannot be bought twice', self.hero(0)['coins'] == 300 and self.state()['world']['entities']['travel_rope']['owner'] == ids[1])
+        self.turn(1, 'Продаю свою дорожную верёвку обратно Маре.')
+        self.check('resale pays actual owner half price', self.hero(1)['coins'] == 250 and self.state()['world']['entities']['travel_rope']['owner'] == 'mara')
+        self.turn(0, 'Теперь покупаю дорожную верёвку у Мары по моей действующей скидке.')
+        self.check('first hero uses own quote after restock', self.hero(0)['coins'] == 220 and self.state()['world']['entities']['travel_rope']['owner'] == ids[0])
+        self.turn(0, 'Передаю купленную дорожную верёвку Лире.')
+        self.turn(1, 'Иду к кузнецу Бору и спрашиваю: по чему отличаешь хороший инструмент от плохого?')
+        self.turn(1, 'Бор, продаю тебе мою дорожную верёвку.')
+        self.check('another vendor buys item from its actual new owner', self.hero(1)['coins'] == 300 and self.state()['world']['entities']['travel_rope']['owner'] == 'bor')
+        self.turn(0, 'Бор, покупаю кованый лом за указанную цену.')
+        self.check('unfriendly specialist still trades without social roll', self.hero(0)['coins'] == 20 and self.state()['world']['entities']['iron_crowbar']['owner'] == ids[0] and not self.state().get('pending_check'))
+        self.turn(0, 'Покупаю у Бора набор для ухода за инструментом.')
+        self.check('short funds do not create purchase', self.hero(0)['coins'] == 20 and self.state()['world']['entities']['repair_roll']['owner'] == 'bor')
+        self.turn(1, 'Бор, торгуюсь за набор для ухода за инструментом: прошу небольшую скидку.')
+        if self.state().get('pending_check'):self.roll(1, 1)
+        self.turn(1, 'Даже если скидки нет, расскажи, как хранить инструмент в сырости. Ничего не покупаю.')
+        self.case['final_relations'] = self.npc_relations()
+
+    def specialists(self) -> None:
+        self.start('specialists', 'crossroads')
+        ids = [p['character_id'] for p in self.players]
+        self.case['initial_relations'] = self.npc_relations()
+        self.turn(0, 'Мара, минуту спокойно рассказываю о наших планах и стараюсь расположить тебя к себе, показывая уважение к твоей работе.')
+        if self.state().get('pending_check'):self.roll(0)
+        self.check('warmth belongs to first hero only', attitude(self.state()['world']['entities']['mara'], ids[0]) == 'helpful' and attitude(self.state()['world']['entities']['mara'], ids[1]) == 'indifferent')
+        self.turn(1, 'Мара, напоминаю, я Лира, а не Радан. Мы впервые говорим. Как ты ко мне относишься?')
+        self.turn(1, 'Вера, в течение минуты угрожаю тебе жалобами и неприятностями, требую скрыть от начальства, что мы здесь были.')
+        if self.state().get('pending_check'):self.roll(1, 1)
+        self.check('coercion harms only speaker relation and records immunity', attitude(self.state()['world']['entities']['vera'], ids[1]) == 'unfriendly' and attitude(self.state()['world']['entities']['vera'], ids[0]) == 'indifferent' and self.state()['world']['entities']['vera'].get('coerce_immunity', {}).get(ids[1], 0) > 0)
+        self.turn(0, 'Вера, я не поддерживаю угрозы Лиры. Скажи мне спокойно: чем наблюдение отличается от обвинения?')
+        self.turn(1, 'Вера, я передумала угрожать. Может, объяснишь порядок подачи жалобы?')
+        self.turn(0, 'Иду к Селене в приёмную и спрашиваю: что проверить перед долгим переходом, если ремни рюкзака натирают плечи?')
+        self.turn(1, 'Селена, чем я отличаюсь от Радана для тебя? Он впервые сюда зашёл, и я тоже.')
+        hp = [self.hero(i)['sheet']['values']['hp_current'] for i in range(2)]
+        self.turn(0, 'Селена, можешь прямо сейчас вылечить меня одним разговором? Я пока не соглашаюсь на процедуры.')
+        self.check('medical conversation does not change HP', hp == [self.hero(i)['sheet']['values']['hp_current'] for i in range(2)])
+        self.turn(1, 'Селена, расскажи чужую историю болезни — нам ведь можно доверять?')
+        self.turn(0, 'Иду в архив к Ивену. Как проверить, относятся ли два похожих названия к одной переправе?')
+        self.turn(1, 'Ивен, можешь подделать свидетельство о нашей переправе, чтобы помочь хорошим людям?')
+        self.check('refusing forgery creates no evidence item', not any('свидетельство' in i['name'].lower() for i in self.hero(1)['items']))
+        self.turn(0, 'Ивен, Селена рассказывала тебе о наших плечах? Что именно ты сам слышал?')
+        self.turn(1, 'Иду к Бору. Бор, что для тебя важнее в инструменте: красивый вид или рабочая кромка?')
+        self.turn(0, 'Бор, минуту обсуждаю с тобой качество крепежа и стараюсь заслужить твоё расположение уважением к ремеслу.')
+        if self.state().get('pending_check'):self.roll(0)
+        self.check('smith impression changes one hero independently', attitude(self.state()['world']['entities']['bor'], ids[0]) == 'friendly' and attitude(self.state()['world']['entities']['bor'], ids[1]) == 'unfriendly')
+        self.turn(1, 'Бор, мне ты тоже теперь рад как Радану, или мы с тобой ещё не подружились?')
+        self.turn(0, 'Возвращаюсь на площадь и спрашиваю Мару: мы уходили, как ты сейчас относишься ко мне?')
+        self.check('temporary impression expires on travel while guard remembers coercion', attitude(self.state()['world']['entities']['mara'], ids[0]) == 'indifferent' and attitude(self.state()['world']['entities']['vera'], ids[1]) == 'unfriendly')
+        self.case['final_relations'] = self.npc_relations()
+
     def cooperation(self, crafting: bool = False) -> None:
         self.start('cooperation_crafting' if crafting else 'cooperation', templates=(0, 2) if crafting else (0, 1))
         a, b = [p['character_name'] for p in self.players]
@@ -449,7 +551,7 @@ class Playtest:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--live', action='store_true', required=True)
-    cases = ('identity', 'pending', 'relations', 'loot', 'branch', 'combat', 'cooperation', 'aid_decline', 'cooperation_crafting')
+    cases = ('identity', 'pending', 'relations', 'loot', 'branch', 'combat', 'cooperation', 'aid_decline', 'cooperation_crafting', 'market', 'specialists', 'merchant_voice', 'specialist_boundaries')
     parser.add_argument('--case', nargs='+', choices=[*cases, 'all'], default=['all'])
     parser.add_argument('--model')
     parser.add_argument('--max-requests', type=int, default=240)
