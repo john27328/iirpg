@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from urllib.parse import parse_qs
 from uuid import uuid4
 from iirpg.server import ChatHTTPServer
 from iirpg.application import ChatService
@@ -99,3 +100,58 @@ class PlanRestartTests(unittest.TestCase):
                 self.assertEqual(error.exception.code,409);error.exception.close()
                 history=self.request(base,root+'/messages?chat=first')
                 self.assertFalse(any(m['type']=='tool.result' for m in history['messages']))
+
+    def test_player_aid_survives_restart_between_helper_and_owner_rolls(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory=Path(temporary)
+            (directory/'access-token').write_text('restart-action-plans-testing-token-123456789')
+            server=ChatHTTPServer(('127.0.0.1',0),directory/'chat.sqlite3')
+            class Client:
+                steps=[]
+                def ready(self):return True
+                def complete(self,*args):return {'content':json.dumps({'intent':'act','reply':'Попытка.','steps':self.steps})}
+            client=Client();server.ai.client=client;server.ai.config['session_narration']=False
+            try:
+                heroes=server.games.heroes.list()['heroes']
+                game=server.games.execute({'action':'create','scenario':'missing-book','name':'Помощь вдвоём',
+                    'party':[{'name':'Алина','hero_id':heroes[0]['id']},{'name':'Борис','hero_id':heroes[1]['id']}]},str(uuid4()))
+                room=game['room_id'];players=game['players'];ids=[p['character_id'] for p in players]
+                tokens=[parse_qs(p['fragment'])['access'][0] for p in players]
+                for actor in ids:
+                    roster=server.roster.read(room)
+                    server.roster.execute(room,{'action':'update_character','revision':roster['revision'],'id':actor,
+                        'data':{'sheet':{'values':{'athletics_other':80}}}},str(uuid4()))
+                def say(actor,steps):
+                    client.steps=steps;state=server.adventure.read(room)
+                    return server.adventure.execute(room,{'revision':state['revision'],'character_id':actor,'text':'Выполняю заявленное действие.'},str(uuid4()))
+                first=next(h for h in server.roster.read(room)['characters'] if h['id']==ids[0])
+                say(ids[0],[{'rule':'stow','target':'inventory:'+i['id']} for i in first['items'] if i.get('hands')]+[{'rule':'move','target':'store'}])
+                say(ids[1],[{'rule':'aid','target':ids[0],'task':'chest','skill':'athletics'}])
+                before=say(ids[0],[{'rule':'force_open','target':'chest'},{'rule':'take','target':'book'}])
+                self.assertEqual(before['pending_check']['kind'],'player_aid')
+            finally:server.server_close()
+            root='/api/rooms/'+room
+            def roll(base,player,pending):
+                with urlopen(Request(base+root+'/tools/dice',data=json.dumps({'sender':'first',
+                    'offer_id':pending['offer_id'],'request_id':pending['roll_request_id']}).encode(),
+                    headers={'Content-Type':'application/json','Authorization':'Bearer '+tokens[player]}),timeout=5) as response:
+                    return json.load(response)
+            with running_server(directory) as base:
+                state=self.request(base,root+'/session');self.assertEqual(state,before)
+                helper=state['pending_check']
+                with self.assertRaises(HTTPError) as error:roll(base,0,helper)
+                self.assertEqual(error.exception.code,403);error.exception.close()
+                roll(base,1,helper)
+                middle=self.request(base,root+'/session')
+                self.assertEqual(middle['pending_check']['character_id'],ids[0])
+                self.assertEqual(middle['pending_check']['modifier'],helper['assisted_check']['modifier']+middle['pending_check']['aid']['bonus'])
+                roll(base,1,helper)
+                self.assertEqual(self.request(base,root+'/session'),middle)
+            with running_server(directory) as base:
+                self.assertEqual(self.request(base,root+'/session'),middle)
+                roll(base,0,middle['pending_check'])
+                after=self.request(base,root+'/session')
+                self.assertEqual(after['world']['entities']['book']['owner'],ids[0])
+                self.assertEqual(after['plan']['status'],'completed')
+                roll(base,1,helper);roll(base,0,middle['pending_check'])
+                self.assertEqual(self.request(base,root+'/session'),after)

@@ -8,6 +8,7 @@ from .world import accessible, location, route
 ATTITUDES = ['hostile', 'unfriendly', 'indifferent', 'friendly', 'helpful']
 ATTITUDE_LABELS = dict(zip(ATTITUDES, ['враждебное', 'недружелюбное', 'безразличное', 'дружелюбное', 'готовность помочь']))
 RULES = json.loads((Path(__file__).with_name('rules') / 'actions_pf2e.json').read_text())['actions']
+AID_DC = RULES['aid'].get('dc', 15)
 
 
 def validate_proposal(value: object) -> dict:
@@ -108,7 +109,18 @@ def prepare(world: dict, actor: dict, step: dict, inventory_rules: dict | None =
     if target.get('hidden') and rule != 'seek':
         raise ValueError('Эта цель пока не обнаружена.')
     if rule == 'aid' and target['kind'] == 'pc':
-        raise ValueError('Помощь одного героя другому пока не поддерживается в сюжетных проверках.')
+        if key == actor['id']:
+            raise ValueError('Нельзя помогать самому себе.')
+        if not {key, actor['id']} <= set(world.get('party', [])):
+            raise ValueError('Помощник и получатель должны входить в одну группу.')
+        task = world['entities'].get(step.get('task'))
+        if not task or location(world, step['task']) != place:
+            raise ValueError('Для подготовки помощи нужно находиться у места задачи.')
+        if step.get('skill') not in actor.get('aid_skills', []):
+            raise ValueError('Укажите доступный помощнику навык.')
+        prepared['player_aid'] = {'helper_id': actor['id'], 'recipient_id': key,
+                                 'task': step['task'], 'skill': step['skill']}
+        return prepared
     if rule in ('combat', 'make_impression', 'request', 'coerce', 'sense_motive', 'aid'):
         if target['kind'] != 'npc' or target.get('status', 'standing') != 'standing':
             raise ValueError('Этот персонаж сейчас не может участвовать в действии.')
@@ -360,8 +372,16 @@ def apply(world: dict, action: dict, outcome: int | None = None) -> dict:
             target['hidden'] = False
         result['text'] = 'Вы обнаружили: ' + name + '.' if outcome >= 2 else 'Поиск не дал результата.'
     elif rule == 'aid':
-        world.setdefault('aid', {})[actor] = {'npc': key, 'task': step['task'], 'skill': step['skill'], 'expires': world['time'] + 60}
-        result['text'] = name + ': готовится помочь следующей проверке — ' + world['entities'][step['task']]['name'] + '.'
+        if action.get('player_aid'):
+            aids = world.setdefault('aid', {})
+            for recipient, aid in list(aids.items()):
+                if aid.get('helper_id') == actor:
+                    aids.pop(recipient)
+            aids[key] = {**action['player_aid'], 'expires': world['time'] + 60}
+            result['text'] = world['entities'][actor]['name'] + ': готовится помочь ' + name + ' с задачей «' + world['entities'][step['task']]['name'] + '». Бросок помощника потребуется при попытке товарища.'
+        else:
+            world.setdefault('aid', {})[actor] = {'npc': key, 'task': step['task'], 'skill': step['skill'], 'expires': world['time'] + 60}
+            result['text'] = name + ': готовится помочь следующей проверке — ' + world['entities'][step['task']]['name'] + '.'
     elif rule == 'improvise':
         if outcome >= 2:
             if action['ruling']['effect'] == 'open':
@@ -372,14 +392,34 @@ def apply(world: dict, action: dict, outcome: int | None = None) -> dict:
     for quest in world.get('quests', {}).values():
         if not quest.get('completed') and world['entities'][quest['item']].get('owner') == quest['owner']:
             quest['completed'] = True
+            quest['completed_by'] = actor
             result['text'] += ' ' + quest['text']
     return result
+
+
+def aid_bonus(outcome: int, rank: int) -> int:
+    """Player Core Aid degrees, shared by NPC and player-controlled helpers."""
+    return [-1, 0, 1, 4 if rank == 4 else 3 if rank == 3 else 2][outcome]
+
+
+def take_player_aid(world: dict, actor: dict, prepared: dict) -> dict | None:
+    """Consume matching preparation, never roll a player's dice here."""
+    aid = world.get('aid', {}).get(actor['id'])
+    if not aid or not aid.get('helper_id') or aid['task'] != prepared['target']:
+        return None
+    world['aid'].pop(actor['id'])
+    helper = world['entities'].get(aid['helper_id'], {})
+    if aid['expires'] <= world.get('time', 0) or helper.get('kind') != 'pc' or helper.get('status', 'standing') != 'standing':
+        return None
+    if aid['helper_id'] not in world.get('party', []) or location(world, aid['helper_id']) != location(world, actor['id']):
+        return None
+    return deepcopy(aid)
 
 
 def aid_roll(world: dict, actor: dict, prepared: dict, roll_die) -> dict | None:
     """Aid is a single prepared, willing helper's task-specific reaction."""
     aid = world.get('aid', {}).get(actor['id'])
-    if not aid or aid['task'] != prepared['target'] or aid['skill'] != prepared['skill'] or aid['expires'] <= world.get('time', 0):
+    if not aid or aid.get('helper_id') or aid['task'] != prepared['target'] or aid['skill'] != prepared['skill'] or aid['expires'] <= world.get('time', 0):
         return None
     npc = world['entities'][aid['npc']]
     if npc.get('status', 'standing') != 'standing' or location(world, aid['npc']) != location(world, actor['id']):
@@ -387,7 +427,7 @@ def aid_roll(world: dict, actor: dict, prepared: dict, roll_die) -> dict | None:
     world['aid'].pop(actor['id'])
     modifier = npc.get('skills', {}).get(aid['skill'], 0)
     natural = roll_die(20)
-    outcome = degree(natural, natural + modifier, 15)
+    outcome = degree(natural, natural + modifier, AID_DC)
     rank = npc.get('ranks', {}).get(aid['skill'], 0)
-    bonus = [-1, 0, 1, 4 if rank == 4 else 3 if rank == 3 else 2][outcome]
-    return {**aid, 'natural': natural, 'modifier': modifier, 'dc': 15, 'degree': outcome, 'bonus': bonus}
+    bonus = aid_bonus(outcome, rank)
+    return {**aid, 'natural': natural, 'modifier': modifier, 'dc': AID_DC, 'degree': outcome, 'bonus': bonus}

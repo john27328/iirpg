@@ -70,7 +70,9 @@ def actor_view(actor: dict, rules: dict) -> dict:
     ranks = {key[:-5]: ['untrained', 'trained', 'expert', 'master', 'legendary'].index(value)
              for key, value in values.items() if key.endswith('_rank')}
     return {**deepcopy(actor), 'stats': CharacterRules(rules).statistics(actor['sheet'], actor['attributes']),
-            'ranks': ranks, 'abilities': build['spells'] if build else {}}
+            'ranks': ranks, 'abilities': build['spells'] if build else {},
+            'aid_skills': [key for key, spec in rules['profiles'][actor['sheet']['profile']]['statistics'].items()
+                           if spec.get('group') == 'skills' or key == 'perception']}
 
 
 def sync_inventory(c, room: str, state: dict, roster: dict) -> None:

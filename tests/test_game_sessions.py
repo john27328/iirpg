@@ -44,6 +44,11 @@ class GameSessionTests(unittest.TestCase):
         client=games.adventure.ai.client
         client.complete=lambda *a:{'content':json.dumps({'intent':'act','reply':'','steps':[{'rule':'move','target':'store'},{'rule':'force_open','target':'chest'}]})}
         story=games.adventure.execute(self.room,{'revision':0,'character_id':self.actor,'text':'Поднимаю груз'},str(uuid4()))
+        # This checkpoint tests an NPC reaction, so keep a witness at the check.
+        with self.store._connection() as c:
+            saved=json.loads(c.execute('SELECT body FROM adventures WHERE room_id=?',(self.room,)).fetchone()[0])
+            saved['world']['entities']['hostess']['place']='store'
+            games.adventure.save(c,self.room,saved)
         pending=story['pending_check'];self.act(games,'save',room_id=self.room)
         from iirpg.application import ChatService
         from iirpg.dice import DiceTool

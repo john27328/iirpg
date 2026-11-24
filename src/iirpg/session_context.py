@@ -50,7 +50,15 @@ request/coerce: target — NPC, method — краткое содержание �
 make_impression — явная попытка расположить к себе; просьба помочь — request, а не автоматическое знакомство.
 Извинение/«ты» относится к conversation_partner, упоминание третьего лица как причины не меняет адресата.
 Ответ NPC на социальную проверку останавливает план. Помощь ещё не означает, что герой пошёл работать.
-aid: target — согласившийся NPC, task — ID объекта будущей проверки, skill — навык; это разовая подготовка.
+aid для NPC: target — согласившийся помощник-NPC, task — объект будущей проверки, skill — навык.
+aid для помощи другого ИГРОКА: текущий герой сам помогает, target — герой-получатель из shared_party,
+task — объект будущей проверки, skill — навык помощника. Например «я придерживаю дверь, пока товарищ открывает» = aid(target=товарищ, task=дверь, skill=athletics).
+Навык помощника может отличаться от навыка основного действия, если способ помощи подходит к задаче.
+Сохраняй явно названный игроком подходящий навык помощи: осмотр механизма через Ремесло = skill=crafting,
+даже когда товарищ затем открывает силой через athletics. Не подменяй навык помощника навыком получателя.
+Не заменяй помощь героя помощью NPC. Просьба к другому игроку ждёт его ответа и сама не совершает aid за него.
+quests.completed_by — подтверждённый автор завершения задания. Не приписывай его действие текущему собеседнику.
+Подготовка не бросает кости. При попытке товарища сначала появится личная карточка помощника, затем карточка основного героя.
 hold = взять в руку (подбор движок добавит сам); stow = убрать свою вещь. give = передать вещь recipient.
 locked контейнер требует force_open/pick_lock, затем take содержимого. Лом должен быть в руках.
 Для нового способа используй ближайшее обычное правило, сохраняя способ в method.
@@ -113,6 +121,10 @@ def context(state: dict, actor: dict, text: str, reaction: bool = False) -> dict
         if pending.get('aid'):
             pending['modifier_before_aid'] = pending['modifier'] - pending['aid']['bonus']
             pending['aid_already_included'] = True
+        if state['pending_check'].get('kind') == 'player_aid':
+            pending['kind'] = 'player_aid'
+            pending['assisted_attempt'] = {k: deepcopy(state['pending_check']['assisted_check'][k])
+                for k in ('character_id', 'actor_name', 'skill', 'modifier', 'dc', 'description')}
     resolution = {}
     if reaction:
         latest = next((h for h in reversed(state['history']) if h.get('action') == 'check_result'), {})
@@ -128,14 +140,15 @@ def context(state: dict, actor: dict, text: str, reaction: bool = False) -> dict
             except ValueError as error:
                 resolution.update(another_attempt_possible=False, reason=str(error))
     return {'player': text, 'conversation_partner': {'id': partner, 'name': npcs[partner]['name']} if partner else None, 'hero': actor['name'], 'hero_id': actor['id'], 'shared_party': [{'id':key,'name':world['entities'][key]['name'],'place':location(world,key)} for key in members(state) if key in world['entities']], 'location_id': place,
-            'places': world['places'], 'quests': {key: {k: deepcopy(v) for k, v in quest.items() if k in ('item', 'owner', 'completed')} for key, quest in world.get('quests', {}).items()}, 'observations': public_view(world, actor['id'], place),
+            'places': world['places'], 'quests': {key: {k: deepcopy(v) for k, v in quest.items() if k in ('item', 'owner', 'completed', 'completed_by')} for key, quest in world.get('quests', {}).items()}, 'observations': public_view(world, actor['id'], place),
             'entities': relevant, 'entity_index': {key: {k: deepcopy(v) for k, v in value.items() if k in ('name', 'kind', 'owner', 'place', 'hidden', 'affordances', 'skills', 'ranks')} for key, value in world['entities'].items() if value.get('owner') not in party_ids}, 'known_destinations': {key: {'name': value['name'], 'place': location(world, key)} for key, value in world['entities'].items() if value['kind'] == 'npc'}, 'gm_knowledge': npcs, 'time_seconds': world.get('time', 0),
             'inventory': [{**{k: deepcopy(v) for k, v in item.items() if k in ('name', 'state', 'hands', 'required_hands', 'tags', 'broken', 'quantity')}, 'id': item_refs.get(item['id'], item['id'])} for item in actor.get('items', [])], 'skills': actor['stats'], 'character_build': describe(actor),
             'history': recent, 'recollections': recalled, 'pending_check': pending,
+            'prepared_aid': deepcopy(world.get('aid', {})),
             'plan': {k: v for k, v in state.get('plan', {}).items() if k in ('status', 'reason', 'original_text', 'index')}, 'rule_catalog': {key: {k: v for k, v in spec.items() if k in ('summary', 'skill', 'seconds', 'required_fields')} for key, spec in RULES.items()},
             'phase': 'AFTER_ROLL' if reaction else 'PLAYER_TURN',
             'last_check_resolution': resolution,
-            'confirmed_results': [{k:deepcopy(v) for k,v in h.items() if k in ('player','gm','check','action','rule','target','actor_name','character_id')} for h in state['history'][-2:]] if reaction else []}
+            'confirmed_results': [{k:deepcopy(v) for k,v in h.items() if k in ('player','gm','check','action','rule','target','actor_name','character_id','effects')} for h in state['history'][-2:]] if reaction else []}
 
 
 def schema(state: dict) -> dict:

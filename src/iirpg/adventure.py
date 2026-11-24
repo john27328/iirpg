@@ -7,7 +7,7 @@ from uuid import UUID, uuid5
 from .storage import MessageConflict
 from .checks import degree
 from .world import scenario, location
-from .action_rules import RULES, validate_proposal, prepare, apply, aid_roll
+from .action_rules import RULES, AID_DC, validate_proposal, prepare, apply, aid_roll, aid_bonus, take_player_aid
 from .session_context import PLANNER_PROMPT, context, schema, repeats_previous_reply
 from .session_world import initialize, actor_view, sync_inventory, persist_effects, compatibility_view
 from .character_resources import save_character
@@ -87,6 +87,13 @@ class AdventureStore:
         latest=next((h for h in reversed(state['history']) if h.get('action')=='check_result'),{})
         if latest.get('offer_id')!=offer_id:raise ValueError('Это не последняя проверка сессии.')
         if state.get('active_combat'): return state
+        # A helper result already explains the modifier and offers the ally's
+        # card. No NPC may speak for the two players or finish their next check.
+        if latest.get('rule') == 'aid_check': return state
+        speakers = [key for key, npc in state['world']['entities'].items() if npc['kind'] == 'npc'
+                    and npc.get('status', 'standing') in ('standing', 'surrendered')
+                    and location(state['world'], key) == state['location']]
+        if not speakers: return state
         return self.execute(room,{'revision':state['revision'],'character_id':latest.get('character_id',state['character_id']),'text':'Опиши немедленные последствия последней проверки по результату кубика. Не назначай новый бросок. Если действие затронуло NPC, опиши его реакцию с учётом предыдущего общения. Агрессию учитывай только если игрок угрожал NPC или нападал на него. Для работы с предметами без NPC не упоминай агрессию и отсутствие свидетелей.'},key,reaction=True)
 
 
@@ -165,6 +172,52 @@ class AdventureStore:
         return {'rule': 'combat', 'target': action['target'], 'combat_id': battle['id'],
                 'text': 'Начинается столкновение с ' + target['name'] + '. Сначала инициатива; попадание ещё не определено.', 'effects': []}
 
+    def check_card(self, state: dict, actor: dict, roster: dict, action: dict, step_key: str,
+                   aid: dict | None = None) -> dict:
+        """Freeze a card without publishing it or rolling dice."""
+        offer_id = str(uuid5(UUID(step_key), 'session.check'))
+        pending = {'skill': action['skill'], 'modifier': action['modifier'], 'dc': action['dc'],
+                   'offer_id': offer_id, 'roll_request_id': str(uuid5(UUID(offer_id), 'dice.offer.accept')),
+                   'prepared_action': deepcopy(action), 'plan_id': state['plan']['id'],
+                   'character_id': actor['id'], 'actor_name': actor['name'], 'player_id': actor.get('player_id')}
+        if action.get('modifier_breakdown'):
+            pending['modifier_breakdown'] = deepcopy(action['modifier_breakdown'])
+        if aid: pending['aid'] = deepcopy(aid)
+        target = state['world']['entities'].get(action['target'], {})
+        detail = RULES[action['rule']].get('label', action['rule']) + ' — ' + target.get('name', action['target'])
+        if action['step'].get('service'):
+            detail += ': ' + target.get('services', {}).get(action['step']['service'], {}).get('name', action['step']['service'])
+        elif action.get('commitment'):
+            detail += ': ' + action['commitment']['name']
+        pending['description'] = detail
+        pending['label'] = roster['character_rules']['profiles'][actor['sheet']['profile']]['statistics'][action['skill']]['label']
+        return pending
+
+    def player_aid_card(self, c, room: str, state: dict, assisted: dict, aid: dict) -> dict | None:
+        """An ally's attempt requests the helper's own roll before its own card."""
+        try:
+            helper, roster = self.actor(c, room, aid['helper_id'])
+        except ValueError:
+            return None
+        if helper['sheet']['values']['hp_current'] <= 0:
+            return None
+        skill = aid['skill']
+        if skill not in helper.get('aid_skills', []):
+            return None
+        offer_id = str(uuid5(UUID(assisted['offer_id']), 'player.aid:' + helper['id']))
+        label = 'Помочь ' + assisted['actor_name'] + ' — ' + state['world']['entities'][aid['task']]['name']
+        action = {'rule': 'aid_check', 'actor': helper['id'], 'target': assisted['character_id'],
+                  'skill': skill, 'modifier': helper['stats'][skill], 'dc': AID_DC, 'seconds': 0,
+                  'rank': helper.get('ranks', {}).get(skill, 0), 'step': {
+                      'rule': 'aid', 'target': assisted['character_id'], 'task': aid['task'], 'skill': skill}}
+        return {'kind': 'player_aid', 'skill': skill, 'modifier': action['modifier'], 'dc': AID_DC,
+                'offer_id': offer_id, 'roll_request_id': str(uuid5(UUID(offer_id), 'dice.offer.accept')),
+                'prepared_action': action, 'assisted_check': deepcopy(assisted),
+                'plan_id': assisted['plan_id'], 'character_id': helper['id'], 'actor_name': helper['name'],
+                'player_id': helper.get('player_id'),
+                'label': roster['character_rules']['profiles'][helper['sheet']['profile']]['statistics'][skill]['label'], 'description': label,
+                'modifier_breakdown': [{'label': 'Навык помощника', 'value': action['modifier'], 'character_id': helper['id']}]}
+
     def run_plan(self, c, room, state):
         plan = state['plan']
         events = []
@@ -191,29 +244,18 @@ class AdventureStore:
             participant = state['world']['entities'].get(action['target'], {})
             if participant.get('kind') == 'npc': state['conversation_with'] = action['target']
             if action.get('skill'):
-                aid = aid_roll(state['world'], actor, action, self.ai.combat.roll_die)
+                player_aid = take_player_aid(state['world'], actor, action)
+                aid = aid_roll(state['world'], actor, action, self.ai.combat.roll_die) if not player_aid else None
                 if aid:
                     action['modifier'] += aid['bonus']
                     action.setdefault('modifier_breakdown', []).append({'label': 'Помощь NPC', 'value': aid['bonus'], 'helper_id': aid['npc']})
-                offer_id = str(uuid5(UUID(step_key), 'session.check'))
-                roll_id = str(uuid5(UUID(offer_id), 'dice.offer.accept'))
-                pending = {'skill': action['skill'], 'modifier': action['modifier'], 'dc': action['dc'],
-                           'offer_id': offer_id, 'roll_request_id': roll_id, 'prepared_action': action, 'plan_id': plan['id'], 'character_id':actor['id'], 'actor_name':actor['name'], 'player_id':actor.get('player_id')}
-                if action.get('modifier_breakdown'):
-                    pending['modifier_breakdown'] = deepcopy(action['modifier_breakdown'])
-                if aid: pending['aid'] = aid
-                target = state['world']['entities'].get(action['target'], {})
-                detail = RULES[action['rule']].get('label', action['rule']) + ' — ' + target.get('name', action['target'])
-                if action['step'].get('service'):
-                    detail += ': ' + target.get('services', {}).get(action['step']['service'], {}).get('name', action['step']['service'])
-                elif action.get('commitment'):
-                    detail += ': ' + action['commitment']['name']
-                pending['description'] = detail
-                pending['label'] = roster['character_rules']['profiles'][actor['sheet']['profile']]['statistics'][action['skill']]['label']
+                pending = self.check_card(state, actor, roster, action, step_key, aid)
+                if player_aid:
+                    pending = self.player_aid_card(c, room, state, pending, player_aid) or pending
                 state['pending_check'] = pending
                 plan['status'] = 'awaiting_roll'
                 self.offer(c, room, pending)
-                events.append({'rule': action['rule'], 'target': action['target'], 'text': f"{detail}. Проверка: {pending['label']} ({action['modifier']:+d}), КС {action['dc']}. Ожидает вашего броска в карточке проверки."})
+                events.append({'rule': action['rule'], 'target': action['target'], 'text': f"{pending['description']}. Проверка: {pending['label']} ({pending['modifier']:+d}), КС {pending['dc']}. Ожидает броска {pending['actor_name']} в карточке проверки."})
                 break
             if action['rule'] == 'combat':
                 event = self.start_combat(c, room, state, actor, action, step_key)
@@ -269,6 +311,45 @@ class AdventureStore:
         pending['prepared_action'] = {'rule': 'legacy_check', 'skill': pending['skill'], 'target': '', 'seconds': 2,
                                       'step': {}, 'actor': state['character_id']}
 
+    def restore_assisted_check(self, c, room: str, state: dict, pending: dict,
+                               aid: dict | None = None) -> dict:
+        """The beneficiary's original frozen attempt resumes without a model call."""
+        assisted = deepcopy(pending['assisted_check'])
+        if aid is not None:
+            assisted['aid'] = deepcopy(aid)
+            assisted['modifier'] += aid['bonus']
+            assisted['prepared_action']['modifier'] = assisted['modifier']
+            part = {'label': 'Помощь ' + pending['actor_name'], 'value': aid['bonus'], 'helper_id': pending['character_id']}
+            assisted.setdefault('modifier_breakdown', []).append(part)
+            assisted['prepared_action']['modifier_breakdown'] = deepcopy(assisted['modifier_breakdown'])
+        state['pending_check'] = assisted
+        if state.get('plan', {}).get('id') == assisted['plan_id']:
+            state['plan']['status'] = 'awaiting_roll'
+        self.offer(c, room, assisted)
+        return assisted
+
+    def resolve_player_aid(self, c, room: str, state: dict, pending: dict,
+                           natural: int, total: int, outcome: int) -> None:
+        action = pending['prepared_action']
+        bonus = aid_bonus(outcome, action['rank'])
+        assisted = pending['assisted_check']
+        aid = {'kind': 'player', 'helper_id': pending['character_id'], 'recipient_id': assisted['character_id'],
+               'task': action['step']['task'], 'skill': pending['skill'], 'natural': natural,
+               'modifier': pending['modifier'], 'dc': pending['dc'], 'degree': outcome, 'bonus': bonus}
+        check = {k: aid[k] for k in ('skill', 'natural', 'modifier', 'dc', 'degree')}
+        check.update(total=total, aid_bonus=bonus)
+        text = (f"{pending['actor_name']} помогает {assisted['actor_name']}: d20={natural}, итог {total} против КС {pending['dc']}. "
+                f"Поправка помощи {bonus:+d} только к этой проверке. Теперь бросает {assisted['actor_name']}: "
+                f"{assisted['label']} ({assisted['modifier'] + bonus:+d}), КС {assisted['dc']}.")
+        self.restore_assisted_check(c, room, state, pending, aid)
+        state['revision'] += 1
+        state['history'] = (state['history'] + [{'player': '', 'gm': text, 'check': check,
+            'action': 'check_result', 'rule': 'aid_check', 'target': assisted['character_id'],
+            'effects': [], 'offer_id': pending['offer_id'], 'character_id': pending['character_id'],
+            'actor_name': pending['actor_name'], 'player_id': pending.get('player_id')}])[-MAX_STORY_ENTRIES:]
+        self.publish(c, room, state)
+        self.save(c, room, state)
+
     def resolve_pending(self, c, room, state):
         pending = state.get('pending_check')
         if not pending: return
@@ -282,6 +363,9 @@ class AdventureStore:
         actor, roster = self.actor(c, room, pending.get('character_id',state['character_id']))
         natural = event['tool_result']['rolls'][0]['values'][0]
         total = natural + pending['modifier']; outcome = degree(natural, total, pending['dc'])
+        if pending.get('kind') == 'player_aid':
+            self.resolve_player_aid(c, room, state, pending, natural, total, outcome)
+            return
         check = {k: pending[k] for k in ('skill', 'modifier', 'dc')}
         check.update(natural=natural, total=total, degree=outcome)
         if pending.get('aid'): check['aid'] = pending['aid']
@@ -332,6 +416,12 @@ class AdventureStore:
         pending = state.pop('pending_check', None)
         if not pending: return 'Нет ожидающей попытки для отмены.'
         state.setdefault('cancelled_offers', []).append(pending['offer_id'])
+        if pending.get('kind') == 'player_aid':
+            assisted = self.restore_assisted_check(c, room, state, pending)
+            text = 'Помощь отменена без броска. Основная попытка сохранена: теперь бросает ' + assisted['actor_name'] + ', без поправки помощника.'
+            if announce:
+                self.event(c, room, str(uuid5(UUID(pending['offer_id']), 'cancelled')), 'second', text, {'cancelled_offer_id': pending['offer_id']})
+            return text
         if state.get('plan'): state['plan']['status'] = 'cancelled'
         if announce:
             self.event(c, room, str(uuid5(UUID(pending['offer_id']), 'cancelled')), 'second', 'Попытка отменена; кости не брошены. Уже выполненные шаги сохранены.', {'cancelled_offer_id': pending['offer_id']})
@@ -400,6 +490,13 @@ class AdventureStore:
             return None
         if entry['action'] == 'question' and entry.get('voice') == 'gm':
             return None
+        for event in entry.get('events', []):
+            target = state['world']['entities'].get(event.get('target'), {})
+            if event.get('rule') == 'aid' and target.get('kind') == 'pc':
+                return None
+            if event.get('rule') == 'give' and any(state['world']['entities'].get(effect.get('to'), {}).get('kind') == 'pc'
+                                                   for effect in event.get('effects', [])):
+                return None
         if entry['action'] == 'act' and (state.get('pending_check') or state.get('plan', {}).get('status') == 'blocked'):
             # The roll card already announces the attempt. Wait for the actual
             # outcome before playing acceptance/refusal or physical progress.
@@ -511,7 +608,8 @@ class AdventureStore:
                 prompt_context = {k: v for k, v in prompt_context.items() if k in (
                     'hero', 'hero_id', 'shared_party', 'conversation_partner', 'gm_knowledge', 'observations',
                     'history', 'recollections', 'pending_check', 'location_id', 'phase', 'confirmed_results', 'last_check_resolution', 'player')}
-            payload = {'model': self.ai.config.get('session_model', self.ai.config['model']), 'messages': [{'role': 'system', 'content': story_narration.REACTION_PROMPT if reaction else PLANNER_PROMPT}, {'role': 'user', 'content': json.dumps(prompt_context, ensure_ascii=False)}],
+                prompt_context = fit_context(story_narration.narrative_scope(prompt_context, state['world']), budget)
+            payload = {'model': self.ai.config.get('session_model', self.ai.config['model']), 'messages': [{'role': 'system', 'content': story_narration.prompt_for(prompt_context, reaction=True) if reaction else PLANNER_PROMPT}, {'role': 'user', 'content': json.dumps(prompt_context, ensure_ascii=False)}],
                        'max_tokens': 4096 if self.ai.config.get('session_reasoning') else 1800, 'temperature': 0.2,
                        'reasoning': session_reasoning(self.ai.config),
                        'provider': {'max_price': {'prompt': 0, 'completion': 0}},

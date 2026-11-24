@@ -5,11 +5,13 @@ from uuid import uuid4
 
 from iirpg.action_rules import prepare
 from iirpg.story_memory import dialogue, fit_context
+from iirpg.story_narration import narrative_scope
 from story_fixtures import StoryFixture
 
 
 class RecallTests(StoryFixture, unittest.TestCase):
     def test_failed_force_open_reaction_knows_retry_is_possible_with_same_dc(self):
+        self.edit(lambda state: state['world']['entities']['hostess'].update(place='store'))
         state = self.say('Пробую открыть.', {'rule': 'move', 'target': 'store'}, {'rule': 'force_open', 'target': 'chest'})
         offer = state['pending_check']['offer_id']
         self.roll_pending(self.session, state, 1)
@@ -20,6 +22,14 @@ class RecallTests(StoryFixture, unittest.TestCase):
         self.assertTrue(resolution['target_after']['jammed'])
         self.assertEqual(resolution['retry_dc'], 15)
         self.assertEqual(resolution['retry_modifier_without_new_aid'], self.hero()['sheet_statistics']['athletics'] - 4)
+
+    def test_no_npc_reaction_is_generated_in_player_only_scene(self):
+        state = self.say('Пробую открыть.', {'rule': 'move', 'target': 'store'}, {'rule': 'force_open', 'target': 'chest'})
+        offer = state['pending_check']['offer_id']
+        after = self.roll_pending(self.session, state, 20)
+        calls = len(self.client.calls)
+        self.assertEqual(self.session.react(self.room, offer), after)
+        self.assertEqual(len(self.client.calls), calls)
 
     def test_old_conversation_is_recalled_without_truncating_quoted_details(self):
         original = {'player': 'Меня зовут Кир. Я ищу сестру.',
@@ -154,6 +164,19 @@ class OpenRequestTests(StoryFixture, unittest.TestCase):
 
 
 class NarrationTests(StoryFixture, unittest.TestCase):
+    def test_narration_scope_allows_only_conscious_npcs_and_confirmed_currency(self):
+        data = {'shared_party': [{'id': self.actor}], 'gm_knowledge': {
+            'hostess': {'name': 'Хозяйка', 'status': 'defeated'},
+            'stablehand': {'name': 'Конюх', 'status': 'standing'}}, 'confirmed_results': [
+                {'effects': [{'type': 'transfer', 'entity': 'book', 'to': self.actor}]}]}
+        world = {'entities': {'book': {'kind': 'item', 'name': 'Книга'},
+                              'coins': {'kind': 'currency', 'name': '5 медных монет'}}, 'quests': {}}
+        scoped = narrative_scope(data, world)
+        self.assertEqual(scoped['npc_speakers'], {'stablehand': 'Конюх'})
+        self.assertEqual(scoped['confirmed_rewards'], [])
+        data['confirmed_results'].append({'effects': [{'type': 'transfer', 'entity': 'coins', 'to': self.actor}]})
+        self.assertEqual(narrative_scope(data, world)['confirmed_rewards'][0]['name'], '5 медных монет')
+
     def setUp(self):
         super().setUp()
         self.session.ai.config['session_narration'] = True
@@ -171,6 +194,8 @@ class NarrationTests(StoryFixture, unittest.TestCase):
     def test_narration_sees_committed_effects_and_replay_never_calls_twice(self):
         def response(data):
             self.assertEqual(data['location_id'], 'store')
+            self.assertEqual(data['npc_speakers'], {})
+            self.assertEqual(data['confirmed_rewards'], [])
             self.assertFalse(data['pending_check'])
             self.assertEqual(data['plan']['status'], 'completed')
             self.assertEqual(self.session.read(self.room)['location'], 'store')

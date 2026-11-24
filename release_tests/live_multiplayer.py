@@ -166,10 +166,11 @@ class Playtest:
         self.check('roll replay preserves result', again == 201 and self.state() == resolved)
         row = {'player': player, 'natural': natural, 'offer_id': pending['offer_id'], 'entries': [state['history'][-1]], 'after': self.snapshot()}
         if react and not state.get('active_combat'):
+            before_reaction = len(state['history'])
             status, response = self.request(self.root + '/session/react', {'offer_id': pending['offer_id']}, player=player)
             self.check('owner can request post-roll reaction', status == 200, response.get('error'))
             state = self.state()
-            row['entries'].append(state['history'][-1])
+            row['entries'].extend(state['history'][before_reaction:])
             row['after'] = self.snapshot()
         self.case['turns'].append(row)
         print(json.dumps({'case': self.case['name'], 'roll_player': player, 'd20': natural, 'gm': row['entries'][-1]['gm']}, ensure_ascii=False), flush=True)
@@ -278,6 +279,69 @@ class Playtest:
         self.check('quest completes after owner gives book', self.state()['world']['quests']['return_book'].get('completed', False))
         self.turn(1, 'Хозяйка, кто именно передал тебе книгу, а кто вскрыл замок?')
 
+    def cooperation(self, crafting: bool = False) -> None:
+        self.start('cooperation_crafting' if crafting else 'cooperation', templates=(0, 2) if crafting else (0, 1))
+        a, b = [p['character_name'] for p in self.players]
+        self.turn(0, 'Убираю меч и щит и иду в кладовую.')
+        declaration = (f'Применяю Ремесло: осматриваю крепление крышки, показываю {a} слабое место и помогаю ему правильно приложить силу.'
+                       if crafting else f'Я сама придерживаю сундук снизу и помогаю {a} открыть крышку.')
+        state = self.turn(1, declaration)
+        prepared = state['world'].get('aid', {}).get(self.players[0]['character_id'], {})
+        self.check('second hero prepares own help without rolling', prepared.get('helper_id') == self.players[1]['character_id'] and 'pending_check' not in state)
+        state = self.turn(0, 'Теперь пробую открыть крышку силой и забираю книгу, если получится.')
+        helper = deepcopy(state.get('pending_check'))
+        self.check('ally attempt first offers helper personal roll', bool(helper) and helper.get('kind') == 'player_aid' and helper['character_id'] == self.players[1]['character_id'])
+        if not helper or helper.get('kind') != 'player_aid':return
+        if crafting:
+            self.check('helper uses Crafting while ally uses Athletics', helper['skill'] == 'crafting' and helper['assisted_check']['skill'] == 'athletics')
+        self.denied(0, '/tools/dice', {'sender': 'first', 'offer_id': helper['offer_id'], 'request_id': helper['roll_request_id']})
+        self.turn(0, f'Сейчас бросает {b}, верно? Мой бросок будет только после её помощи?')
+        state = self.roll(1)
+        main = deepcopy(state.get('pending_check'))
+        self.check('main card returns to actual beneficiary', bool(main) and main['character_id'] == self.players[0]['character_id'] and main['aid']['helper_id'] == self.players[1]['character_id'])
+        if not main or main['character_id'] != self.players[0]['character_id']:return
+        self.check('helper changes only frozen modifier not outcome', main['modifier'] == helper['assisted_check']['modifier'] + main['aid']['bonus'] and not state['world']['entities']['chest']['open'])
+        self.denied(1, '/tools/dice', {'sender': 'first', 'offer_id': main['offer_id'], 'request_id': main['roll_request_id']})
+        self.roll(0)
+        self.check('main actor owns loot after joint attempt', self.state()['world']['entities']['book']['owner'] == self.players[0]['character_id'])
+        self.turn(0, f'Передаю найденную дорожную книгу моей спутнице {b}.')
+        self.check('cooperation does not block real handoff', self.state()['world']['entities']['book']['owner'] == self.players[1]['character_id'])
+        self.turn(1, 'Возвращаюсь к хозяйке в зал вместе со спутником и отдаю ей дорожную книгу.')
+        self.check('helper can later finish quest as actual new owner', self.state()['world']['quests']['return_book'].get('completed', False))
+        self.turn(0, 'Хозяйка, напомни: кто вскрыл сундук, кто помог и кто передал тебе книгу?')
+
+    def cooperation_crafting(self) -> None:
+        self.cooperation(crafting=True)
+
+    def aid_decline(self) -> None:
+        self.start('aid_decline')
+        a = self.players[0]['character_name']
+        self.turn(0, 'Убираю оружие и щит и иду в кладовую.')
+        self.turn(1, f'Придерживаю крышку сундука и готовлюсь помочь {a}.')
+        state = self.turn(0, 'Я пробую открыть сундук силой.')
+        helper = deepcopy(state.get('pending_check'))
+        if not helper or helper.get('kind') != 'player_aid':
+            self.check('helper card exists for cancellation case', False)
+            return
+        self.cancel(1)
+        main = deepcopy(self.state()['pending_check'])
+        self.check('declining help preserves main attempt without aid', main['character_id'] == self.players[0]['character_id'] and main['modifier'] == helper['assisted_check']['modifier'] and 'aid' not in main)
+        self.roll(0, 1)
+        self.turn(1, f'В этот раз снова готовлюсь помочь {a}, придерживаю сундук, чтобы его не перекосило.')
+        state = self.turn(0, 'Пробую открыть сундук ещё раз.')
+        helper = deepcopy(state.get('pending_check'))
+        if not helper or helper.get('kind') != 'player_aid':
+            self.check('new preparation creates new helper card', False)
+            return
+        state = self.roll(1, 1)
+        main = deepcopy(state['pending_check'])
+        self.check('critical failure applies one penalty to ally check', main['aid']['bonus'] == -1 and main['modifier'] == helper['assisted_check']['modifier'] - 1)
+        self.turn(0, 'Неудачная помощь уменьшает мой модификатор на один, а не меняет КС? Пока не бросаю.')
+        self.cancel(0)
+        state = self.turn(0, 'Теперь пробую открыть сундук сам, без новой подготовки помощи.')
+        self.check('spent help cannot affect a later attempt', state['pending_check']['character_id'] == self.players[0]['character_id'] and 'aid' not in state['pending_check'] and state['pending_check']['modifier'] == helper['assisted_check']['modifier'])
+        self.cancel(0)
+
     def branch(self) -> None:
         self.start('branch')
         self.turn(0, 'Хозяйка, я ищу брата Северина и не беру платы.')
@@ -385,7 +449,8 @@ class Playtest:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--live', action='store_true', required=True)
-    parser.add_argument('--case', nargs='+', choices=['identity', 'pending', 'relations', 'loot', 'branch', 'combat', 'all'], default=['all'])
+    cases = ('identity', 'pending', 'relations', 'loot', 'branch', 'combat', 'cooperation', 'aid_decline', 'cooperation_crafting')
+    parser.add_argument('--case', nargs='+', choices=[*cases, 'all'], default=['all'])
     parser.add_argument('--model')
     parser.add_argument('--max-requests', type=int, default=240)
     parser.add_argument('--output', type=Path)
@@ -400,7 +465,7 @@ def main() -> None:
         parser.error('Choose a new output; existing reports are not overwritten.')
     test = Playtest(output, args.model, args.max_requests)
     try:
-        for name in ('identity', 'pending', 'relations', 'loot', 'branch', 'combat'):
+        for name in cases:
             if 'all' not in args.case and name not in args.case:continue
             try:
                 getattr(test, name)()
