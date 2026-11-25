@@ -69,6 +69,7 @@ try{
    await page.locator('#game-create-button').click();
    await page.locator('#evening-adventure').waitFor({state:'visible'});
    await page.locator('#show-inventory').click();
+   if(width<=680)assert(!await page.locator('.roster-sidebar').isVisible(),'single hero search wastes mobile inventory space');
    await page.getByRole('button',{name:'Лист персонажа',exact:true}).first().click();
    await page.locator('.sheet-dialog[open]').waitFor();
    assert(!await page.locator('.sheet-edit-tab').isVisible(),'game stats editable');
@@ -92,7 +93,7 @@ try{
     await page.locator('#show-chat').click();
     assert(!await page.locator('#games-menu').isVisible(),'game menu remains open after navigation');
    }
-   if(width===320||width===390){
+   if(width===320||width===390||width===1280){
     await page.locator('#show-battle').click();
     const battle=page.frameLocator('#combat-frame');await battle.locator('.battle-workspace').waitFor();
     await battle.locator('.connection.online').waitFor({state:'attached'});
@@ -101,6 +102,7 @@ try{
     assert(!await battle.locator('#battle-preparation').isVisible(),'developer setup leaks into game');
     const field=await battle.locator('#intent-text').boundingBox();assert(field&&field.width>=100,'tactical composer input is squeezed');
     await touchTarget(battle.locator('#battle-chat .send-button'),'tactical send');
+    assert(await battle.locator('#battle-chat .chat-header').evaluate(header=>{const title=header.querySelector('h2').getBoundingClientRect(),box=header.getBoundingClientRect();return title.top>=box.top&&title.bottom<=box.bottom;}),'tactical chat heading is clipped');
     await page.locator('#show-chat').click();
    }
    if(width===390){

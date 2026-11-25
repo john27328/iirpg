@@ -4,6 +4,11 @@ body.creator-open { overflow: hidden; }
 body[data-view="game"] .send-button { min-width: 44px; width: 44px; min-height: 44px; }
 body[data-view="game"] .button-secondary { min-height: 44px; font-size: 13px; }
 body[data-view="game"] .inventory button { min-height: 44px; font-size: 13px; }
+@media(max-width:680px) {
+  body[data-view="game"] .inventory[data-solo-inventory="true"] .roster-sidebar,
+  body[data-view="game"] .inventory[data-solo-inventory="true"] .inventory-header>div:first-child { display: none; }
+  body[data-view="game"] .inventory[data-solo-inventory="true"] .inventory-layout { grid-template-columns: minmax(0, 1fr); }
+}
 body[data-view="game"] .reply-choice { min-height: 44px; font-size: 14px; }
 
 body[data-view="game"] .mobile-only { display: none; }

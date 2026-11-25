@@ -29,6 +29,8 @@ NARRATION_PROMPT = '''Ты ведущий настольной RPG на русс
 Даже отказывая, доброжелательный NPC не превращает каждый ответ в ультиматум или обвинение без причины.
 Действия уже проверены движком. Не выполняй заново player и не продолжай оставшиеся намерения.
 buy/sell в confirmed_results — сделка УЖЕ завершилась. Не откладывай её осмотром вещи или обещанием назвать цену позже.
+При sell вещь уже у торговца: не вручай её герою как при покупке. Текущий кошелёк — trade.hero_coins_cp;
+суммы в history относятся к прошлому. Если называешь остаток, используй только текущее значение.
 Факты и доступные предметы заданы observations и confirmed_results; цели и голос NPC — gm_knowledge.
 Если есть pending_check, попытка ещё НЕ разрешилась: можно описать подготовку и реакцию, но не успех/провал.
 До броска не описывай прогресс («уже поддаётся», «замок сдаётся», «ещё усилие и откроется»): исход неизвестен.
@@ -112,3 +114,27 @@ def reply(response: dict) -> str:
     if not isinstance(value, dict) or set(value) != {'reply'} or not isinstance(value['reply'], str) or not value['reply'].strip() or len(value['reply']) > 1600:
         raise ValueError('Мастер не вернул описание сцены.')
     return value['reply'].strip()
+
+
+def validate_trade_amounts(text: str, data: dict) -> None:
+    """Reject unsupported numeric currency claims after a committed trade.
+
+    This is a bounded check on explicit amounts, not a general prose validator.
+    A rejected embellishment leaves the engine's trade confirmation visible.
+    """
+    events=data.get('confirmed_results', [])
+    if not any(event.get('rule') in ('buy','sell') for event in events):
+        return
+    trade=data.get('trade', {})
+    allowed={trade.get('hero_coins_cp')}
+    for merchant in trade.get('merchants', {}).values():
+        allowed.add(merchant.get('cash_cp'))
+        for offer in merchant.get('offers', []):
+            allowed.update((offer.get('price_cp'), offer.get('base_price_cp')))
+    allowed.update(abs(effect['delta']) for event in events for effect in event.get('effects', [])
+                   if effect.get('type')=='coins')
+    for match in re.finditer(r'(?<!\w)(\d+)\s*(медн\w*|серебр\w*|золот\w*|мм\b|см\b|зм\b|монет\w*)', text, re.I):
+        denomination=match[2].lower()
+        multiplier=100 if denomination.startswith(('золот','зм')) else 10 if denomination.startswith(('серебр','см')) else 1
+        if int(match[1])*multiplier not in allowed:
+            raise ValueError('Описание сделки содержит неподтверждённую сумму.')

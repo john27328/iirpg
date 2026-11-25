@@ -121,3 +121,13 @@ IIRPG contributors supplied Russian labels, starter statistics and bounded
 implementations. School features, full class progression and many options are
 omitted. These adaptations are Licensed Material under the ORC License with
 the attribution above, not a relicensing of Paizo material under the code license.
+
+`combat_equipment_pf2e.json` adapts the melee damage dice and agile/finesse
+traits for the fist, dagger and longsword from Player Core (2023), pp. 277–278:
+https://2e.aonprd.com/Weapons.aspx?ID=356,
+https://2e.aonprd.com/Weapons.aspx?ID=358 and
+https://2e.aonprd.com/Weapons.aspx?ID=386 (checked November 25, 2026).
+IIRPG contributors supplied Russian labels and the bounded starter-class
+mapping. This is a partial implementation: weapon traits, proficiency choices,
+armor, equipment changes during combat and the distinction between lethal
+and nonlethal damage are not implemented in full.

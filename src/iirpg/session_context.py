@@ -27,7 +27,11 @@ hero/hero_id — персонаж ИГРОКА, не ты. Никогда не �
 В shared_party другие герои управляются своими игроками. Не говори и не принимай решения за них.
 
 Верни JSON {intent, reply, steps, voice, interlocutor}. intent: question, act, clarify или cancel.
-interlocutor — ID присутствующего NPC, к которому обращается игрок, либо пустая строка.
+plan описывает прошлую попытку, а не список шагов для повторения. Строй новый план только для последнего player.
+inventory — текущее снаряжение, включая изменения через интерфейс. stowed/hands=0 означает убрано;
+не бери убранные предметы снова без просьбы игрока. Прошлое «держу в руках» не отменяет текущий inventory.
+interlocutor — ID присутствующего NPC, способного отвечать, либо пустая строка.
+О выбывшем NPC и последствиях боя отвечает ведущий: voice=gm, interlocutor="", без новых действий.
 При явном обращении к другому NPC выбирай его, а не прежнего conversation_partner. Это только выбор собеседника, без согласия или движения.
 voice=gm для вопросов о механике: возможность действия, навык, инструменты, КС, бросок, способности.
 Такой вопрос требует точного ответа мастера, а не придуманной реплики NPC. Укажи известные условия в reply.
@@ -146,7 +150,8 @@ def context(state: dict, actor: dict, text: str, reaction: bool = False) -> dict
     world = scoped_world(state,text); place = state['location']
     party_ids=set(members(state))
     npcs = {key: {**{k: deepcopy(v) for k, v in value.items() if k in ('name', 'role', 'knowledge', 'goals', 'status', 'agreements', 'commitments', 'coerce_immunity', 'memories', 'personality')}, 'attitude_to_hero': attitude(value, actor['id'])}
-            for key, value in world['entities'].items() if value['kind'] == 'npc' and location(world, key) == place}
+            for key, value in world['entities'].items() if value['kind'] == 'npc' and location(world, key) == place
+            and value.get('status','standing') in ('standing','surrendered')}
     relevant = {}
     for key, value in world['entities'].items():
         if value['kind'] != 'pc' and value.get('owner') not in party_ids and (location(world, key) == place or value.get('owner') == actor['id']):
@@ -213,7 +218,7 @@ def schema(state: dict, text: str = '') -> dict:
     return {'type': 'object', 'properties': {
         'intent': {'type': 'string', 'enum': ['question', 'act', 'clarify', 'cancel']},
         'reply': {'type': 'string'}, 'voice': {'type': 'string', 'enum': ['gm', 'npc']},
-        'interlocutor': {'type': 'string', 'enum': ['', *[k for k, v in entities.items() if v['kind'] == 'npc' and location(state['world'], k) == state['location']]]},
+        'interlocutor': {'type': 'string', 'enum': ['', *[k for k, v in entities.items() if v['kind'] == 'npc' and location(state['world'], k) == state['location'] and v.get('status','standing') in ('standing','surrendered')]]},
         'steps': {'type': 'array', 'maxItems': 8, 'items': {'type': 'object', 'properties': properties,
                   'required': list(properties), 'additionalProperties': False}}},
         'required': ['intent', 'reply', 'steps', 'voice', 'interlocutor'], 'additionalProperties': False}

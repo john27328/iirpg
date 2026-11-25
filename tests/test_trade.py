@@ -214,3 +214,42 @@ class TradeTests(unittest.TestCase):
             return {'content': json.dumps({'intent': 'question', 'reply': 'Восемьдесят медных.', 'steps': [], 'voice': 'npc'})}
         self.server.ai.client.complete = complete
         self.server.adventure.react(self.room, pending['offer_id'])
+
+    def test_narrator_receives_wallet_and_stock_after_purchase_and_sale(self):
+        self.server.ai.config['session_narration']=True
+        observed=[]
+        def complete(payload,timeout):
+            if payload['response_format']['json_schema']['name']=='scene_narration':
+                observed.append(json.loads(payload['messages'][1]['content']))
+                return {'content':json.dumps({'reply':'Мара подтверждает сделку.'})}
+            return {'content':json.dumps(self.proposal)}
+        self.server.ai.client.complete=complete
+        self.assertEqual(self.say(0,{'rule':'buy','target':'travel_rope'})[0],200)
+        self.assertEqual(self.say(0,{'rule':'sell','target':'travel_rope','recipient':'mara'})[0],200)
+        self.assertEqual([p['trade']['hero_coins_cp'] for p in observed],[200,250])
+        offers=[next(i for i in p['trade']['merchants']['mara']['offers'] if i['name']=='Дорожная верёвка') for p in observed]
+        self.assertEqual([i['buying'] for i in offers],[False,True])
+
+    def test_stale_wallet_in_narration_does_not_hide_committed_sale(self):
+        self.server.ai.config['session_narration']=True
+        def complete(payload,timeout):
+            if payload['response_format']['json_schema']['name']=='scene_narration':
+                return {'content':json.dumps({'reply':'Осталось у тебя 200 медных монет.'})}
+            return {'content':json.dumps(self.proposal)}
+        self.server.ai.client.complete=complete
+        self.say(0,{'rule':'buy','target':'travel_rope'})
+        status,result=self.say(0,{'rule':'sell','target':'travel_rope','recipient':'mara'})
+        self.assertEqual(status,200)
+        self.assertIn('продаёт',result['history'][-1]['gm'])
+        self.assertNotIn('200 медных',result['history'][-1]['gm'])
+        hero=next(a for a in self.server.roster.read(self.room)['characters'] if a['id']==result['character_id'])
+        self.assertEqual(hero['coins'],250)
+
+    def test_trade_amount_check_accepts_current_wallet_and_currency_conversion(self):
+        from iirpg.story_narration import validate_trade_amounts
+        data={'confirmed_results':[{'rule':'sell','effects':[{'type':'coins','delta':50}]}],
+              'trade':{'hero_coins_cp':250}}
+        validate_trade_amounts('Теперь 250 медных монет. За вещь — 5 серебряных.',data)
+        with self.assertRaisesRegex(ValueError,'неподтверждённую сумму'):
+            validate_trade_amounts('Теперь 200 медных монет.',data)
+        validate_trade_amounts('Когда-то здесь было 200 медных монет.',{'confirmed_results':[]})

@@ -183,12 +183,17 @@ class CombatStore:
                         raise ValueError('Профиль не содержит КБ и Восприятие.')
                     strength = actor['attributes'].get('strength', 0)
                     owner = next((p['name'] for p in roster['players'] if p['id'] == actor.get('player_id')), None)
+                    profile=combat_profile(actor)
+                    if _session is not None and actor.get('build'):
+                        from .combat_equipment import loadout
+                        from .roster import InventoryRules
+                        profile.update(loadout(actor,InventoryRules(roster['rules'])))
                     heroes.append({'name': actor['name'], 'character_id': actor['id'], 'entity_id': actor['id'],
                         'player_id': actor.get('player_id'), 'player_name': owner, 'team': 'players',
                         'hp': actor['sheet']['values']['hp_current'], 'max_hp':actor['sheet']['values']['hp_max'], 'ac': stats['armor_class'], 'perception': stats['perception'],
                         'attack': strength + actor['sheet']['values'].get('level', 1) + self.rules['player']['proficiency_offset'],
                         'damage_die': self.rules['player']['die'], 'damage_bonus': strength,
-                        'speed': actor['sheet']['values'].get('speed', 25), **combat_profile(actor)})
+                        'speed': actor['sheet']['values'].get('speed', 25), **profile})
                 group_id = preset['group_id'] if preset else command.get('group_id', 'duel')
                 if not isinstance(group_id, str):
                     raise ValueError('group_id должен быть строкой.')

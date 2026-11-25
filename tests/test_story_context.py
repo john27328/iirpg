@@ -10,6 +10,33 @@ from iirpg.world import scenario
 
 
 class StoryContextTests(StoryFixture,unittest.TestCase):
+    def test_defeated_npc_is_observable_but_not_a_conversation_partner(self):
+        from iirpg.session_context import schema
+        self.edit(lambda s:(s['world']['entities']['hostess'].update(status='defeated'),s.update(conversation_with='hostess')))
+        state=self.session.read(self.room)
+        actor=actor_view(self.hero(),self.roster.read(self.room)['character_rules'])
+        data=context(state,actor,'Как выглядит хозяйка после боя?')
+        self.assertIsNone(data['conversation_partner'])
+        self.assertNotIn('hostess',data['gm_knowledge'])
+        self.assertEqual(data['entities']['hostess']['status'],'defeated')
+        self.assertNotIn('hostess',schema(state)['properties']['interlocutor']['enum'])
+
+    def test_question_with_stale_defeated_speaker_returns_actual_status(self):
+        self.edit(lambda s:s['world']['entities']['hostess'].update(status='defeated'))
+        before=self.hero()
+        self.client.proposal={'intent':'question','reply':'Я отлично себя чувствую!','steps':[],
+                              'voice':'npc','interlocutor':'hostess'}
+        state=self.session.read(self.room)
+        result=self.session.execute(self.room,{'revision':state['revision'],'character_id':self.actor,
+                                    'text':'Как она после боя, а я ранен?'},str(uuid4()))
+        entry=result['history'][-1]
+        self.assertEqual(entry['voice'],'gm')
+        self.assertIn('не может отвечать',entry['gm'])
+        values=before['sheet']['values']
+        self.assertIn(f"{values['hp_current']}/{values['hp_max']}",entry['gm'])
+        self.assertEqual(self.hero(),before)
+        self.assertEqual(result['world']['entities']['hostess']['status'],'defeated')
+
     def test_context_preserves_recent_dialogue_and_distinguishes_knowledge_from_state(self):
         self.say('Поможешь?',intent='question',reply='О какой помощи речь?')
         state=self.say('С сундуком',intent='question',reply='Можно поговорить с работником.')

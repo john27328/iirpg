@@ -523,6 +523,7 @@ class AdventureStore:
         if used >= self.ai.config['daily_request_limit']:
             return None
         try:
+            actor,_=self.actor(c,room,actor['id'])
             request = story_narration.payload(state, actor, self.ai.config)
             if state.get('campaign'):
                 data = json.loads(request['messages'][1]['content'])
@@ -545,6 +546,7 @@ class AdventureStore:
             response = self.ai.client.complete(trace['request'], self.ai.config['timeout_seconds'])
             trace['response'] = response
             text = story_narration.reply(response)
+            story_narration.validate_trade_amounts(text,json.loads(trace['request']['messages'][1]['content']))
             with self.store._connection() as c:
                 c.execute('BEGIN IMMEDIATE')
                 state = self._load(c, room)
@@ -799,8 +801,16 @@ class AdventureStore:
                 if interlocutor:
                     npc = state['world']['entities'].get(interlocutor, {})
                     if npc.get('kind') != 'npc' or location(state['world'], interlocutor) != state['location'] or npc.get('status', 'standing') not in ('standing', 'surrendered'):
-                        raise ValueError('Выбранный собеседник не находится рядом.')
-                    state['conversation_with'] = interlocutor
+                        if (proposal['intent']=='question' and npc.get('kind')=='npc'
+                                and location(state['world'],interlocutor)==state['location']
+                                and npc.get('status')=='defeated'):
+                            values=actor['sheet']['values']
+                            proposal.update(voice='gm',reply=f"{npc['name']} выбыл из боя и сейчас не может отвечать. Ваши ОЗ: {values['hp_current']}/{values['hp_max']}.")
+                            state.pop('conversation_with',None)
+                        else:
+                            raise ValueError('Выбранный собеседник не находится рядом.')
+                    else:
+                        state['conversation_with'] = interlocutor
                 proposal['reply'] = story_narration.render_references(proposal['reply'],state['world'])
                 entry = {'place_id': state['location'], 'listeners': [k for k, v in state['world']['entities'].items() if v['kind'] == 'npc' and location(state['world'], k) == state['location']], 'player': '' if reaction else text, 'gm': proposal['reply'], 'action': 'reaction' if reaction else proposal['intent'], 'player_request_id': key,'character_id':actor['id'],'actor_name':actor['name'],'player_id':actor.get('player_id'),'player_name':next((p['name'] for p in roster['players'] if p['id']==actor.get('player_id')),None)}
                 entry['voice'] = proposal.get('voice', 'npc')

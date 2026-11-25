@@ -114,6 +114,7 @@ function renderActive(){
   q('#active-vitals').replaceChildren();q('#action-points').replaceChildren();
   if(!f)return;
   q('#active-vitals').append(node('div','vitals-main',`${f.hp} / ${f.max_hp} ОЗ · КБ ${f.ac-(f.frightened||0)+Math.max(f.shield?battle.rules.shield_bonus:0,f.cover?.bonus||0)}`));
+  if(f.weapon_name)q('#active-vitals').append(node('p','muted','Атака: '+f.weapon_name));
   const tags=node('div','vital-tags');if(f.frightened)tags.append(node('span','',`Испуган ${f.frightened}`));if(f.shield)tags.append(node('span','','Щит поднят'));if(f.cover)tags.append(node('span','',`Укрытие +${f.cover.bonus}`));if(f.surrendered)tags.append(node('span','','Сдался'));q('#active-vitals').append(tags);
   if(battle.status==='active'){
     for(let i=0;i<3;i++)q('#action-points').append(node('span',i<battle.actions?'':'spent','◆'));

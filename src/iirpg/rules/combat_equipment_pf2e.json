@@ -1,0 +1,10 @@
+{
+  "edition": "Pathfinder 2e Remaster",
+  "license": "ORC",
+  "notice": "character-ORC-NOTICE.md",
+  "weapons": [
+    {"names": ["Длинный меч"], "name": "Длинный меч", "weapon": "мечом", "damage_die": 8, "agile": false, "finesse": false, "trained_classes": ["fighter", "rogue"], "source_url": "https://2e.aonprd.com/Weapons.aspx?ID=386"},
+    {"names": ["Кинжал"], "name": "Кинжал", "weapon": "кинжалом", "damage_die": 4, "agile": true, "finesse": true, "trained_classes": ["fighter", "rogue", "wizard"], "source_url": "https://2e.aonprd.com/Weapons.aspx?ID=358"}
+  ],
+  "unarmed": {"name": "Безоружная атака", "weapon": "кулаком", "damage_die": 4, "agile": true, "finesse": true, "trained_classes": ["fighter", "rogue", "wizard"], "source_url": "https://2e.aonprd.com/Weapons.aspx?ID=356"}
+}

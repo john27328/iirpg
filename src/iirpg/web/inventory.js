@@ -193,6 +193,7 @@ export class InventoryPanel {
 
   render() {
     if (!this.state) return;
+    this.root.dataset.soloInventory = String(this.state.is_game && this.state.characters.length === 1);
     $(".inventory-rules", this.root).textContent = `${this.state.rules.name} · Персонажей: ${this.state.characters.length} · Игроков: ${this.state.players.length}`;
     if (!this.state.characters.some((entry) => entry.id === this.selected)) this.selected = this.context().characterId || this.state.characters[0]?.id || null;
     this.renderList();

@@ -33,4 +33,8 @@
 .battle-workspace .follow-label{white-space:normal;min-height:44px;}
 .battle-workspace .follow-label input{flex-shrink:0;}
 #battle-chat .avatar{flex-shrink:0;}
+#battle-chat .chat-header{height:auto;min-height:80px;flex-shrink:0;}
+#battle-chat .chat-header>div:not(.avatar){min-width:0;}
+#battle-chat .chat-header h2{font-size:14px;line-height:1.4;letter-spacing:normal;overflow-wrap:anywhere;}
+#battle-chat .chat-subtitle{margin:5px 0 0;font-size:11px;}
 @media(max-width:760px){.battle-workspace .message-text{font-size:15px;}}
