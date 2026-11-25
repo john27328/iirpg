@@ -52,10 +52,73 @@ class CreationPlaytest(Playtest):
         status,_=self.request(self.root+'/roster',{'action':'update_character','revision':before['revision'],'id':hero['id'],'data':{'attributes':{'strength':9}}})
         self.check('even owner cannot turn stats in game',status==403 and self.server.roster.read(self.room)==before)
 
+    def begin_preference(self,name,choice=None):
+        self.case={'name':name,'turns':[],'checks':[]};self.report['cases'].append(self.case)
+        status,new=self.request('/api/characters',{'action':'new_draft'})
+        if status!=200:raise ValueError(new)
+        self.draft=new['draft_id']
+        if choice:
+            status,state=self.request('/api/characters',{'action':'update_draft','id':self.draft,'revision':0,'proposal':choice})
+            if status!=200:raise ValueError(state)
+
+    def preferences(self):
+        self.begin_preference('honest rogue, no premature choice')
+        state=self.ask('Хочу плута по имени Соня. Она честная спасательница, не ворует и никого не убивает. Это не типичный вор! Сохрани этот образ в описании. Перк пока НЕ выбирай: сначала объясни варианты.')
+        self.check('non-stereotypical rogue keeps requested class and name',state['proposal']['class_id']=='rogue' and state['proposal']['name']=='Соня')
+        self.check('asking for explanation does not select feat',state['proposal']['general_feat']=='')
+        self.check('rescue concept appears in card',any(word in state['proposal']['description'].lower() for word in ('спас','помога')))
+        state=self.ask('Выбираю Невероятную инициативу. Принцип: помогать попавшим в беду. Табу: убивать людей. Имя, класс и описание оставь.')
+        self.check('requested feat selected',state['proposal']['general_feat']=='incredible_initiative')
+        before=state['proposal'].copy()
+        state=self.ask('Объясни простыми словами, чем я полезна группе. Пока ничего в карточке не меняй.')
+        self.check('advice preserves all personal choices',state['proposal']==before)
+        state=self.ask('Поменяй только табу на «выдавать чужие тайны». Остальное оставь дословно.')
+        self.check('single belief correction keeps other fields',all(state['proposal'].get(k)==v for k,v in before.items() if k!='anathema'))
+        self.check('new taboo is stored', 'тайн' in state['proposal'].get('anathema','').lower())
+        self.check('personal choices give no invented bonuses',state['preview']['attributes']==RULES['classes']['rogue']['attributes'])
+
+        self.begin_preference('unsupported concept requires consent')
+        state=self.ask('Хочу эльфа-друида, который превращается в сову и лечит друзей. Это уже доступно? Если нет, объясни ограничения. НЕ заменяй его человеком или магом без моего согласия, ничего пока не выбирай.')
+        self.check('unsupported request does not silently choose substitute',not state['proposal']['class_id'] and not state['proposal']['general_feat'] and state['preview'] is None)
+        state=self.ask('Тогда согласен на человека-мага по имени Север с Быстроногим. Он мирный исследователь леса, избегает насилия и любит животных. Честно объясни, каких способностей друида у него не будет.')
+        self.check('explicit fallback creates supported mage',state['proposal']['class_id']=='wizard' and state['proposal']['name']=='Север' and state['proposal']['general_feat']=='fleet')
+        self.check('fallback keeps nature concept',any(word in state['proposal']['description'].lower() for word in ('лес','животн','природ')))
+        self.check('fallback grants no druid magic',set(state['preview']['progression']['spells'])==set(RULES['classes']['wizard']['spells']))
+
+        choice={'name':'Лев','class_id':'fighter','general_feat':'fleet','description':'Учёный дипломат, который умеет защищаться.',
+            'edicts':'Сначала договориться.','anathema':'Унижать слабых.'}
+        self.begin_preference('intellectual fighter and rule limits',choice)
+        state=self.ask('Хочу оставить класс воина, но сделать интеллект и харизму высокими, а силу низкой. И начать с посохом вместо меча и щита. Такое уже можно настроить? Пока ничего в карточке не меняй, объясни честно.')
+        self.check('discussing alternative build leaves manual card intact',state['proposal']==choice)
+        self.check('no invented redistribution of stats',state['preview']['attributes']==RULES['classes']['fighter']['attributes'])
+        state=self.ask('Ладно, оставляем поддержанную сборку. Поменяй только описание: «Я дипломат, который защищает друзей и решает проблемы словами; боевой опыт скрывает». Принципы и табу не трогай.')
+        self.check('flavor edit keeps mechanical and identity choices',all(state['proposal'].get(k)==v for k,v in choice.items() if k!='description'))
+        self.check('new personal concept is stored','дипломат' in state['proposal']['description'].lower() and 'скрыва' in state['proposal']['description'].lower())
+        self.check('all preference cases use supported first-level rules',state['preview']['sheet']['values']['level']==1)
+        final_choice=state['proposal'].copy()
+        status,saved=self.request('/api/characters',{'action':'save','id':self.draft,'revision':state['revision']})
+        if status!=200:raise ValueError(saved)
+        status,game=self.request('/api/games',{'action':'create','campaign':'solo-evening','name':'Образ в игре','hero_id':saved['hero_id']})
+        if status!=200:raise ValueError(game)
+        self.room=game['room_id'];self.root='/api/rooms/'+self.room
+        state=self.state();hero=state['character_id']
+        self.players=[{'character_id':hero,'character_name':final_choice['name']}];self.tokens=[self.owner]
+        self.turn(0,'Напомни, кто мой герой по характеру, что ему важно и как он обычно решает проблемы. Карточку и мир не меняй.')
+        from iirpg.session_context import context
+        with self.server.service.store._connection() as c:actor,_=self.server.adventure.actor(c,self.room,hero)
+        identity=context(self.state(),actor,'Кто я?')['hero_identity']
+        self.check('personal concept reaches game GM',all(identity[k]==final_choice[k] for k in ('description','edicts','anathema')))
+        reply=self.state()['history'][-1]['gm'].lower()
+        self.check('GM recalls diplomatic concept without prompt reminder','дипломат' in reply)
+        self.check('roleplay preferences do not grant bonus statistics',actor['attributes']==RULES['classes']['fighter']['attributes'])
+
+
+
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--live',action='store_true',required=True)
+    parser.add_argument('--case',choices=['basic','preferences'],default='basic')
     parser.add_argument('--model');parser.add_argument('--max-requests',type=int,default=15)
     parser.add_argument('--output',type=Path);args=parser.parse_args()
     if args.model and not(args.model.endswith(':free') or args.model=='openrouter/free'):parser.error('Only free models allowed')
@@ -68,7 +131,7 @@ def main():
     test.report['model']=test.server.ai.config['model']
     test.report['source_hashes'].update({name:hashlib.sha256((Path('src/iirpg')/name).read_bytes()).hexdigest() for name in ('hero_library.py','roster_storage.py','web/hero-menu.js','web/character-sheet.js')})
     try:
-        try:test.play()
+        try:(test.preferences if args.case=='preferences' else test.play)()
         except (ValueError,KeyError,AssertionError) as error:test.case['error']=str(error);print('ERROR:',error,flush=True)
     finally:test.close()
     failures=[c for case in test.report['cases'] for c in case['checks'] if not c['passed']]

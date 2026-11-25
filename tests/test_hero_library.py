@@ -178,3 +178,23 @@ class HeroLibraryTests(unittest.TestCase):
         self.assertEqual(state['saved_hero_id'],saved)
         self.assertEqual(self.action('save',id=room,revision=state['revision'])['hero_id'],saved)
         self.assertEqual(len(self.library.list()['heroes']),count)
+
+    def test_personal_concept_reaches_planner_and_narrator_without_changing_stats(self):
+        from iirpg.session_context import context
+        from iirpg import story_narration
+        room=self.draft()
+        choice={**self.client.choice,'description':'Мирная исследовательница, не любит сражаться.',
+                'edicts':'Помогать потерявшимся.','anathema':'Предавать доверие.'}
+        state=self.action('update_draft',id=room,revision=0,proposal=choice)
+        saved=self.action('save',id=room,revision=state['revision'])['hero_id']
+        game=self.create_game(saved);state=self.games.adventure.read(game)
+        with self.store._connection() as c:actor,_=self.games.adventure.actor(c,game,state['character_id'])
+        before=deepcopy(actor)
+        data=context(state,actor,'Что мне важно?')
+        self.assertEqual({k:data['hero_identity'][k] for k in ('description','edicts','anathema')},
+                         {k:choice[k] for k in ('description','edicts','anathema')})
+        request=story_narration.payload(state,actor,self.library.ai.config)
+        sent=json.loads(request['messages'][1]['content'])
+        self.assertEqual(sent['hero_identity'],data['hero_identity'])
+        self.assertEqual(actor,before)
+        self.assertEqual(actor['attributes'],self.library.read(room)['preview']['attributes'])
