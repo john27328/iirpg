@@ -18,7 +18,9 @@ def description(name='Тихон'):
     return {'description':'На высоком берегу растут ивы. Видны старый паром и новый мост.',
         'npcs':[{'name':name,'role':'Перевозчик','voice':'Негромкий, внимательный.','goal':'Найти груз.',
                  'boundary':'Не обвиняет без доказательств.','knowledge':['Паром продолжает работать.']}],
-        'features':[{'name':'Путевая записка','description':'Здесь ждали груз.','kind':'item'}]}
+        'features':[{'name':'Путевая записка','description':'Здесь ждали груз.','kind':'item'}],
+        'discoveries':[{'source':0,'trigger':'look','observation':'Груз ожидают у старого парома.',
+                       'destination':'old_ferry','question':'Кто примет груз?','follow_up':''}]}
 
 
 class CampaignPersistenceTests(unittest.TestCase):

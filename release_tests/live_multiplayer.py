@@ -44,7 +44,7 @@ class Playtest:
                 'State invariants and manual dialogue review are separate.',
                 'All credentials and games are evaluation-only.']}
         self.report['source_hashes'] = {name: hashlib.sha256((Path('src/iirpg') / name).read_bytes()).hexdigest()
-            for name in ('adventure.py', 'action_rules.py', 'session_context.py', 'story_narration.py', 'story_memory.py', 'trade.py', 'campaign.py', 'campaign_storage.py', 'rules/campaigns/river-marches.json', 'rules/scenarios/crossroads.json')}
+            for name in ('adventure.py', 'action_rules.py', 'session_context.py', 'story_narration.py', 'story_memory.py', 'trade.py', 'campaign.py', 'campaign_storage.py', 'campaign_leads.py', 'rules/campaigns/river-marches.json', 'rules/scenarios/crossroads.json')}
         self.heroes = self.server.games.heroes.list()['heroes']
 
     def close(self) -> None:
@@ -70,7 +70,7 @@ class Playtest:
             headers['Idempotency-Key'] = key or str(uuid4())
         request = Request(self.base + path, data=None if body is None else json.dumps(body).encode(), headers=headers)
         try:
-            response = urlopen(request, timeout=120)
+            response = urlopen(request, timeout=300)
         except HTTPError as error:
             response = error
         with response:
@@ -290,6 +290,58 @@ class Playtest:
         self.turn(0, 'Теперь явно отдаю хозяйке дорожную книгу, которую мне передала спутница.')
         self.check('quest completes after owner gives book', self.state()['world']['quests']['return_book'].get('completed', False))
         self.turn(1, 'Хозяйка, кто именно передал тебе книгу, а кто вскрыл замок?')
+
+    def examine_discovery(self, player: int, parent: str = '') -> dict | None:
+        state = self.state()
+        choices = [(key,value) for key,value in state['world']['entities'].items()
+                   if value.get('discovery') and not value.get('discovery_revealed')
+                   and value.get('place',value.get('owner')) == state['location']
+                   and (not parent or value['discovery']['follow_up']==parent)]
+        self.check('scene has an investigable physical source', bool(choices))
+        if not choices:return None
+        key, feature = choices[0]
+        text = ('Внимательно осматриваю «'+feature['name']+'» и читаю доступные надписи.' if feature['discovery']['trigger']=='look'
+                else 'Пробую открыть силой «'+feature['name']+'», затем внимательно изучаю содержимое.')
+        self.turn(player,text)
+        if self.state().get('pending_check'):self.roll(player)
+        return self.state()['world'].get('leads',{}).get(feature['discovery']['id'])
+
+    def campaign_investigation(self) -> None:
+        self.start('campaign_investigation',region='river-marches')
+        self.turn(0,'Мы с Лирой идём на высокий берег реки. Хочу внимательно осмотреть то, что там осталось от перевозчиков.')
+        self.check('first visit reaches actual river',self.state()['location']=='riverbank')
+        self.check('mere arrival does not discover evidence',not self.state()['world'].get('leads'))
+        first = self.examine_discovery(0)
+        self.check('examination records first observation and actual author',bool(first) and first['discovered_by']==self.players[0]['character_id'])
+        if not first:return
+        self.request('/api/games',{'action':'save','room_id':self.room})
+        destination = self.state()['world']['places'][first['destination']]['name']
+        self.turn(1,'Идём к «'+destination+'» по найденной зацепке. Хочу разобраться, что означает эта запись.')
+        self.check('arrival marks visit without finishing investigation',self.state()['world']['leads'][first['id']]['status']=='visited')
+        second = self.examine_discovery(1,first['id'])
+        self.check('new source continues the exact previous lead',bool(second) and second['follow_up']==first['id'] and second['discovered_by']==self.players[1]['character_id'])
+        if not second:return
+        parent = self.state()['world']['leads'][first['id']]
+        self.check('progress preserves original evidence instead of rewriting it',parent['status']=='followed' and parent['observation']==first['observation'] and parent['continuations']==[second['id']])
+        target = second['destination']
+        title = self.state()['world']['places'][target]['name']
+        known = target in self.state()['campaign']['scene_refs']
+        old_description = self.state()['world']['places'][target]['description']
+        if known:
+            self.turn(0,'Идём к «'+title+'». Затем исследую новое небольшое место в его окрестностях — «Следы у старой тропы». Хочу разобраться с найденным знаком.')
+            self.check('return lead grows local surroundings',self.state()['location'].startswith('site_') and self.state()['world']['places'][self.state()['location']].get('parent')==target)
+            self.check('old place description stays unchanged',self.state()['world']['places'][target]['description']==old_description)
+        else:
+            self.turn(0,'Идём к «'+title+'» по следующей зацепке.')
+        third = self.examine_discovery(0,second['id'])
+        self.check('third observation continues the trail with actual first player as author',bool(third) and third['follow_up']==second['id'] and third['discovered_by']==self.players[0]['character_id'])
+        if not third:return
+        self.check('second observation advances without rewriting the first',self.state()['world']['leads'][second['id']]['status']=='followed' and self.state()['world']['leads'][first['id']]['observation']==first['observation'])
+        self.turn(0,'Напомни как ведущий: как мы продвинулись по трём источникам и кто изучил каждый из них?')
+        self.check('investigation creates no money or automatic quest victory',[self.hero(i)['coins'] for i in range(2)]==[300,300] and not any(q.get('completed') for q in self.state()['world']['quests'].values()))
+        self.request('/api/games',{'action':'load','room_id':self.room})
+        known=self.state()['world'].get('leads',{})
+        self.check('checkpoint retains first observation without future continuation',list(known)==[first['id']] and known[first['id']]['status']=='open' and known[first['id']]['discovered_by']==self.players[0]['character_id'])
 
     def campaign_journey(self) -> None:
         self.start('campaign_journey', region='river-marches')
@@ -578,7 +630,7 @@ class Playtest:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--live', action='store_true', required=True)
-    cases = ('identity', 'pending', 'relations', 'loot', 'branch', 'combat', 'cooperation', 'aid_decline', 'cooperation_crafting', 'market', 'specialists', 'merchant_voice', 'specialist_boundaries', 'campaign_journey')
+    cases = ('identity', 'pending', 'relations', 'loot', 'branch', 'combat', 'cooperation', 'aid_decline', 'cooperation_crafting', 'market', 'specialists', 'merchant_voice', 'specialist_boundaries', 'campaign_journey', 'campaign_investigation')
     parser.add_argument('--case', nargs='+', choices=[*cases, 'all'], default=['all'])
     parser.add_argument('--model')
     parser.add_argument('--max-requests', type=int, default=240)

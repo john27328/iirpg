@@ -312,7 +312,12 @@ def apply(world: dict, action: dict, outcome: int | None = None) -> dict:
                     npc['place'] = action['destination']
         result['text'] = ('Группа переходит: ' if len(travellers) > 1 else 'Вы переходите: ') + ' → '.join(world['places'][p]['name'] for p in action['route'][1:] or action['route']) + '.'
     elif rule == 'look':
-        result['text'] = target.get('description', world['places'][location(world, actor)]['description'])
+        if target.get('kind') == 'container' and target.get('open'):
+            result['text'] = name + ': открыто.'
+            contents = [e['name'] for e in world['entities'].values() if e.get('owner') == key and not e.get('hidden')]
+            if contents:result['text'] += ' Внутри: ' + ', '.join(contents) + '.'
+        else:
+            result['text'] = target.get('description', world['places'][location(world, actor)]['description'])
     elif rule == 'talk':
         result['text'] = 'Вы обращаетесь к ' + name + '.'
     elif rule == 'open':
@@ -405,6 +410,12 @@ def apply(world: dict, action: dict, outcome: int | None = None) -> dict:
             else:
                 target['hidden'] = False
         result['text'] = name + (': необычный способ сработал.' if outcome >= 2 else ': попытка не удалась; можно попробовать другой подход.')
+    from .campaign_leads import reveal, visit
+    if rule == 'move':visit(world,action['destination'],actor)
+    lead = reveal(world,key,actor,rule)
+    if lead:
+        result['discoveries'] = [lead]
+        result['text'] += ' Вы обнаружили: ' + lead['observation'] + ' След ведёт к «' + world['places'][lead['destination']]['name'] + '». ' + lead['question']
     for quest in world.get('quests', {}).values():
         if not quest.get('completed') and world['entities'][quest['item']].get('owner') == quest['owner']:
             quest['completed'] = True

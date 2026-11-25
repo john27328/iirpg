@@ -32,6 +32,12 @@ class CampaignTests(unittest.TestCase):
                 self.generated += 1
                 if self.on_generation:self.on_generation()
                 value = deepcopy(self.generated_value)
+                if 'discoveries' not in value:
+                    root = next((k for k,p in data['main_points'].items() if p['name']==data['seed']['name']),data['seed'].get('parent'))
+                    prior = next((lead for lead in data['open_leads'] if lead['destination']==root and lead['status']!='followed'),None)
+                    value['discoveries']=[{'source':0,'trigger':'look','observation':'На записке указан следующий пункт пути.',
+                        'destination':next(k for k in data['main_points'] if k != root),
+                        'question':'Кто видел груз?','follow_up':prior['id'] if prior else ''}]
                 if data['seed']['name'] != 'Высокий берег реки' and value.get('npcs'):
                     value['npcs'][0]['name'] = 'Смотритель '+data['seed']['name'][:40]
                 return {'content':json.dumps(value,ensure_ascii=False)}

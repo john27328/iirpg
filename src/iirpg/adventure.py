@@ -538,6 +538,7 @@ class AdventureStore:
                 if state['revision'] != trace['revision']:
                     trace.update(status='stale', error='Сцена изменилась; описание не опубликовано.')
                     return result
+                text = story_narration.render_references(text,state['world'])
                 source = state['history'][-1]
                 if text == source['gm'].strip():
                     trace.update(status='completed', deduplicated=True)
@@ -594,7 +595,7 @@ class AdventureStore:
                 try:
                     response = self.ai.client.complete(request,self.ai.config['timeout_seconds'])
                     trace['response'] = response
-                    addition = campaign.scene(trial['world'],place_id,json.loads(response['content']))
+                    addition = campaign.scene(trial['world'],place_id,json.loads(response['content']),require_discoveries=True)
                     trial['world']['places'].update(addition['places']);trial['world']['entities'].update(addition['entities'])
                     additions.append((place_id,addition));trace['status'] = 'completed'
                 except (ValueError,KeyError,TypeError) as error:
@@ -659,7 +660,7 @@ class AdventureStore:
             if reaction:
                 prompt_context = {k: v for k, v in prompt_context.items() if k in (
                     'hero', 'hero_id', 'shared_party', 'conversation_partner', 'gm_knowledge', 'observations',
-                    'history', 'recollections', 'pending_check', 'location_id', 'phase', 'confirmed_results', 'last_check_resolution', 'trade', 'player')}
+                    'history', 'recollections', 'pending_check', 'location_id', 'phase', 'confirmed_results', 'last_check_resolution', 'trade', 'investigation', 'player')}
                 prompt_context = fit_context(story_narration.narrative_scope(prompt_context, state['world']), budget)
             payload = {'model': self.ai.config.get('session_model', self.ai.config['model']), 'messages': [{'role': 'system', 'content': story_narration.prompt_for(prompt_context, reaction=True) if reaction else PLANNER_PROMPT}, {'role': 'user', 'content': json.dumps(prompt_context, ensure_ascii=False)}],
                        'max_tokens': 4096 if self.ai.config.get('session_reasoning') else 1800, 'temperature': 0.2,
@@ -699,6 +700,7 @@ class AdventureStore:
                     if npc.get('kind') != 'npc' or location(state['world'], interlocutor) != state['location'] or npc.get('status', 'standing') not in ('standing', 'surrendered'):
                         raise ValueError('Выбранный собеседник не находится рядом.')
                     state['conversation_with'] = interlocutor
+                proposal['reply'] = story_narration.render_references(proposal['reply'],state['world'])
                 entry = {'place_id': state['location'], 'listeners': [k for k, v in state['world']['entities'].items() if v['kind'] == 'npc' and location(state['world'], k) == state['location']], 'player': '' if reaction else text, 'gm': proposal['reply'], 'action': 'reaction' if reaction else proposal['intent'], 'player_request_id': key,'character_id':actor['id'],'actor_name':actor['name'],'player_id':actor.get('player_id'),'player_name':next((p['name'] for p in roster['players'] if p['id']==actor.get('player_id')),None)}
                 entry['voice'] = proposal.get('voice', 'npc')
                 if proposal['intent'] == 'cancel':

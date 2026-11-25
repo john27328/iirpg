@@ -5,6 +5,7 @@ from .action_rules import RULES, attitude, prepare
 from .progression import describe
 from .party import members
 from .campaign import scoped_world
+from .campaign_leads import public_context
 from .story_memory import dialogue
 
 PROMPT = '''Ты ведущий настольной RPG на русском языке. Ты играешь NPC и описываешь мир.
@@ -41,6 +42,10 @@ act = только явно заявленные действия, в поряд
 Это создаст и сохранит место внутри границ региона, затем переведёт туда группу. Другая главная точка — move, не explore.
 Не подменяй неизвестный берег архивом, храмом или ближайшим допустимым ID. Если смысл неясен — clarify.
 Речь NPC не создаёт новую сущность сама по себе; новое место станет фактом через исследование.
+«Осматриваю конкретный объект», «читаю записку», «изучаю надпись» = look(target), без броска, если объект доступен.
+Вопрос «что здесь видно?» без изучения отдельной вещи — обычный question. Не выдумывай найденные улики в reply.
+investigation содержит найденные наблюдения с источниками и ещё не изученные объекты. Новое наблюдение появится только после look или открытия.
+Простое посещение места не означает, что вопрос расследован или кто-то признан виновным.
 Составную заявку включай целиком: move, force_open, take — разные шаги. Движок сам остановится на броске.
 Не добавляй приготовления и действия «на всякий случай». Разговор НЕ требует убирать оружие или щит.
 Явное «иду в X и делаю Y» = move(X), Y, без повторного разрешения. После move цель уже будет рядом.
@@ -128,7 +133,7 @@ def context(state: dict, actor: dict, text: str, reaction: bool = False) -> dict
     relevant = {}
     for key, value in world['entities'].items():
         if value['kind'] != 'pc' and value.get('owner') not in party_ids and (location(world, key) == place or value.get('owner') == actor['id']):
-            relevant[key] = {k: deepcopy(v) for k, v in value.items() if k not in ('knowledge', 'goals', 'attitudes', 'impressions', 'memories', 'services')}
+            relevant[key] = {k: deepcopy(v) for k, v in value.items() if k not in ('knowledge', 'goals', 'attitudes', 'impressions', 'memories', 'services', 'discovery')}
             if 'item' in relevant[key]:
                 relevant[key]['item'] = {k: v for k, v in relevant[key]['item'].items() if k in ('name', 'category', 'state', 'hands', 'tags', 'broken')}
     item_refs = {value.get('roster_item_id'): key for key, value in world['entities'].items() if value.get('roster_item_id')}
@@ -170,6 +175,7 @@ def context(state: dict, actor: dict, text: str, reaction: bool = False) -> dict
             'history': recent, 'recollections': recalled, 'pending_check': pending,
             'prepared_aid': deepcopy(world.get('aid', {})),
             'trade': trade_view(world, actor),
+            **({'investigation':public_context(state,text,actor['id'])} if state.get('campaign') else {}),
             **({'campaign':{k:deepcopy(state['campaign'][k]) for k in ('name','premise','bounds','facts','episodes')}} if state.get('campaign') else {}),
             'plan': {k: v for k, v in state.get('plan', {}).items() if k in ('status', 'reason', 'original_text', 'index')}, 'rule_catalog': {key: {k: v for k, v in spec.items() if k in ('summary', 'skill', 'seconds', 'required_fields')} for key, spec in RULES.items()},
             'phase': 'AFTER_ROLL' if reaction else 'PLAYER_TURN',

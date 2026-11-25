@@ -6,6 +6,7 @@ from pathlib import Path
 import unicodedata
 
 from .world import location, validate
+from . import campaign_leads
 
 ROOT = Path(__file__).with_name('rules') / 'campaigns'
 
@@ -89,10 +90,12 @@ def string(value: object, limit: int) -> str:
     return value.strip()
 
 
-def scene(world: dict, place_id: str, value: object) -> dict:
+def scene(world: dict, place_id: str, value: object, *, require_discoveries: bool = False) -> dict:
     """Accept descriptive DTOs only. IDs, stats, loot and permissions are engine-owned."""
-    if not isinstance(value, dict) or set(value) != {'description', 'npcs', 'features'}:
+    if not isinstance(value, dict) or set(value) not in ({'description', 'npcs', 'features'}, {'description', 'npcs', 'features', 'discoveries'}):
         raise ValueError('Генератор должен вернуть описание, NPC и объекты.')
+    if require_discoveries and 'discoveries' not in value:
+        raise ValueError('Новой сцене нужна хотя бы одна исследуемая зацепка в discoveries.')
     if not isinstance(value['npcs'], list) or not 0 <= len(value['npcs']) <= 2 or not isinstance(value['features'], list) or not 1 <= len(value['features']) <= 3:
         raise ValueError('Слишком много новых сущностей.')
     place = deepcopy(world['places'][place_id])
@@ -123,6 +126,9 @@ def scene(world: dict, place_id: str, value: object) -> dict:
         elif feature['kind'] == 'obstacle':
             entity.update(kind='container', open=False, locked=True, force_dc=15, lock={'dc':18, 'required':1, 'progress':0})
         entities[f'{place_id}:feature:{i}'] = entity
+    if 'discoveries' in value:
+        discoveries = campaign_leads.prepare(world,place_id,value['features'],value['discoveries'],string)
+        for key, discovery in discoveries.items():entities[key]['discovery'] = discovery
     if set(entities) & set(world['entities']):raise ValueError('Новая сцена меняет существующие сущности.')
     return {'places': {place_id: place}, 'entities': entities}
 
@@ -163,7 +169,7 @@ def scoped_world(state: dict, text: str = '') -> dict:
 
 SCENE_PROMPT = '''Создай небольшую сцену русскоязычной RPG внутри заданной кампании.
 Кампания выше отдельного сценария: её география, established_facts и уже существующие люди неизменны.
-Это первое посещение. Верни JSON description,npcs,features. Не пересказывай игрока и не решай его действие.
+Это первое посещение. Верни JSON description,npcs,features,discoveries. Не пересказывай игрока и не решай его действие.
 Сделай место пригодным для исследования: конкретные наблюдения, разные интересы людей, связный повод идти к другой главной точке.
 Не вводи новых регионов, выходов за bounds, новых главных поселений, сокровищ, монет, лечения или готовой победы.
 NPC: name,role,voice,goal,boundary,knowledge (1–3 известных ему факта). Не знает чужих бесед.
@@ -171,6 +177,12 @@ features: 1–3 объекта с name,description,kind (landmark,item,obstacle)
 obstacle — только механически запертая дверь или ящик: движок поддерживает взлом и силовое открывание.
 Затопленная тропа, река, склон и заросли — landmark; не превращай их в замок, который открывается отмычкой.
 Сохрани неизменные факты seed.canon в наблюдениях или знаниях. Не выдавай все тайны региона в одной сцене.
+discoveries — 1–2 конкретных физических наблюдения, которые игрок сможет обнаружить при изучении объекта.
+source — индекс features с нуля, trigger — look для осмотра или open для содержимого запертого препятствия.
+observation — что обнаружено (надпись, след, отметка), а не готовый вывод о виновнике; до изучения не раскрывай это в description.
+destination — ID ДРУГОЙ главной точки, question — какой конкретный вопрос там можно исследовать, follow_up — ID найденной зацепки или пустая строка.
+Если open_leads содержит зацепку, ведущую в эту область, хотя бы одно наблюдение должно её продолжить через follow_up.
+Продолжение может уточнить или поставить под сомнение прежнюю версию; не превращай слух NPC в доказанную вину и не завершай всё расследование.
 established_people — ЗАПРЕЩЁННЫЕ имена для новых NPC. Эти люди остались на своих местах.
 Не создавай Селену, Мару или другого существующего человека заново. В npcs можно вернуть пустой список.
 Никаких «если NPC здесь» в описании: создавай только фактически присутствующее. Статы и ID назначит движок.
@@ -188,13 +200,19 @@ def generation_payload(state: dict, place_id: str, text: str, config: dict) -> d
     npc = {'name':field(60), 'role':field(80), 'voice':field(160), 'goal':field(160), 'boundary':field(200),
            'knowledge':{'type':'array','minItems':1,'maxItems':3,'items':field(200)}}
     feature = {'name':field(80),'description':field(400),'kind':{'type':'string','enum':['landmark','item','obstacle']}}
+    known_leads = campaign_leads.relevant(world,place_id,text)
+    discovery = {'source':{'type':'integer','minimum':0,'maximum':2},
+        'trigger':{'type':'string','enum':['look','open']},'observation':field(300),
+        'destination':{'type':'string','enum':[k for k,p in world['places'].items() if p.get('campaign_anchor')]},
+        'question':field(180),'follow_up':{'type':'string','enum':['', *[lead['id'] for lead in known_leads]]}}
     obj = lambda props: {'type':'object','properties':props,'required':list(props),'additionalProperties':False}
     schema = obj({'description':field(600),'npcs':{'type':'array','maxItems':2,'items':obj(npc)},
-                  'features':{'type':'array','minItems':1,'maxItems':3,'items':obj(feature)}})
+                  'features':{'type':'array','minItems':1,'maxItems':3,'items':obj(feature)},
+                  'discoveries':{'type':'array','minItems':1,'maxItems':2,'items':obj(discovery)}})
     data = {'campaign':{k:state['campaign'][k] for k in ('name','premise','bounds','facts')},
         'seed':state['world']['places'][place_id], 'established_people': [v['name'] for v in state['world']['entities'].values() if v.get('campaign_pinned')],
         'main_points':{k:{'name':p['name'],'canon':p.get('canon',[])} for k,p in state['world']['places'].items() if p.get('campaign_anchor')},
-        'neighbor_canon':settled, 'player':text}
+        'neighbor_canon':settled, 'open_leads':known_leads, 'player':text}
     return {'model':config.get('session_model',config['model']), 'messages':[{'role':'system','content':SCENE_PROMPT},{'role':'user','content':json.dumps(data,ensure_ascii=False)}],
         'max_tokens':1800,'temperature':0.5,'reasoning':{'enabled':False},'provider':{'max_price':{'prompt':0,'completion':0}},
         'response_format':{'type':'json_schema','json_schema':{'name':'campaign_scene','strict':True,'schema':schema}}}

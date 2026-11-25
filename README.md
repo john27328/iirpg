@@ -447,9 +447,13 @@ PYTHONPATH=src python3 release_tests/live_multiplayer.py --live --case cooperati
 у берега. Созданные места и последствия сохраняются, старые разговоры
 уходят в сжатый архив и выбираются в контекст по запросу.
 [Архитектура, ограничения и измерения](docs/campaign-world.md).
+Новые сцены дают исследуемые зацепки с источником и направлением дальнейшего
+поиска. Осмотр или открытие записывает находку; следующая локация продолжает
+найденный след. [Поведение и живой прогон](docs/campaign-investigation-2026-11-25.md).
 
 ```bash
 PYTHONPATH=src python3 release_tests/live_multiplayer.py --live --case campaign_journey
+PYTHONPATH=src python3 release_tests/live_multiplayer.py --live --case campaign_investigation
 ```
 
 Новый сценарий «Люди у переправы» содержит торговку, кузнеца, лекарку,
