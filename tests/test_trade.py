@@ -123,8 +123,9 @@ class TradeTests(unittest.TestCase):
 
     def test_short_funds_hostile_vendor_and_unknown_prices_do_not_transfer(self):
         roster = self.server.roster.read(self.room)
-        self.request(self.root + '/roster', {'action': 'update_character', 'revision': roster['revision'],
-            'id': self.players[0]['character_id'], 'data': {'coins': 0}})
+        from iirpg.character_resources import save_character
+        hero=next(a for a in roster['characters'] if a['id']==self.players[0]['character_id']);hero['coins']=0
+        with self.server.service.store._connection() as c:save_character(c,self.room,hero)
         self.say(0, {'rule': 'buy', 'target': 'travel_rope'})
         self.assertEqual(self.server.adventure.read(self.room)['world']['entities']['travel_rope']['owner'], 'mara')
         self.edit(lambda s: s['world']['entities']['mara'].update(attitudes={self.players[1]['character_id']: 'hostile'}))

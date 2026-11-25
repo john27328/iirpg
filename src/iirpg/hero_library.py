@@ -21,7 +21,9 @@ PROMPT = '''Ты дружелюбный помощник создания пер
 Все числа, владения, ресурсы и стартовое снаряжение назначает движок; не придумывай
 новые классы, перки, заклинания и бонусы. Объясняй границы текущего набора.
 Учитывай conversation и current_proposal: последнее сообщение уточняет выбор.
-Верни JSON {reply, choices, proposal:{name,class_id,general_feat,description}}.
+Верни JSON {reply, choices, proposal:{name,class_id,general_feat,description,edicts,anathema}}.
+Карточку можно заполнять вручную: current_proposal содержит уже сделанный выбор.
+Сохраняй выбранные поля, если игрок не просил менять их. edicts и anathema — необязательные принципы и табу, без числовых бонусов.
 reply — обычная реплика до 1200 символов, choices — до трёх коротких ответов.
 proposal всегда содержит весь актуальный выбор; пустая строка означает ещё не
 выбрано. Когда выбор готов, объясни, что сохранение выполнит кнопка в карточке.
@@ -31,11 +33,11 @@ proposal всегда содержит весь актуальный выбор;
 
 def proposal(value: object) -> dict:
     fields = {'name', 'class_id', 'general_feat', 'description'}
-    if not isinstance(value, dict) or set(value) != fields:
+    if not isinstance(value, dict) or not fields <= set(value) or set(value)-fields-{'edicts','anathema'}:
         raise ValueError('Помощник вернул неверный выбор персонажа.')
     if any(not isinstance(v, str) for v in value.values()):
         raise ValueError('Выбор персонажа должен содержать текст.')
-    if len(value['name']) > 80 or len(value['description']) > 1000:
+    if len(value['name']) > 80 or any(len(value.get(k,''))>1000 for k in ('description','edicts','anathema')):
         raise ValueError('Слишком длинное имя или описание.')
     if value['class_id'] and value['class_id'] not in RULES['classes']:
         raise ValueError('Помощник предложил недоступный класс.')
@@ -47,8 +49,8 @@ def proposal(value: object) -> dict:
 def make_character(choice: dict, inventory_rules: InventoryRules, sheet_rules: CharacterRules) -> dict:
     choice = proposal(choice)
     if not choice['name'] or not choice['class_id'] or not choice['general_feat']:
-        raise ValueError('Сначала выберите имя, класс и перк в разговоре с помощником.')
-    actor = inventory_rules.character({'name': choice['name'], 'sheet': {'values': {'description': choice['description']}}}, [], sheet_rules)
+        raise ValueError('Сначала выберите имя, класс и перк в карточке или с помощником.')
+    actor = inventory_rules.character({'name': choice['name'], 'sheet': {'values': {k:choice.get(k,'') for k in ('description','edicts','anathema')}}}, [], sheet_rules)
     configure(actor, {k:choice[k] for k in ('class_id','general_feat')}, sheet_rules)
     gear = [{'name':'Верёвка','category':'gear','bulk':'L'}]
     if choice['class_id'] == 'fighter':
@@ -90,8 +92,20 @@ class HeroLibrary:
         if not row:raise KeyError('Разговор создания персонажа не найден.')
         return {**json.loads(row['body']),'revision':row['revision'],'room_id':room}
 
+    def view_draft(self, state: dict) -> dict:
+        choice=state['proposal']
+        missing=[key for key in ('name','class_id','general_feat') if not choice[key]]
+        actor=make_character(choice,self.inventory_rules,self.sheet_rules) if not missing else None
+        if actor:
+            actor['sheet_statistics']=self.sheet_rules.statistics(actor['sheet'],actor['attributes'])
+            actor['progression']=describe(actor)
+        return {**deepcopy(state),'preview':actor,'missing':missing,
+                'creation_rules':{'classes':{k:{'name':v['name'],'description':v['description']} for k,v in RULES['classes'].items()},
+                    'feats':RULES['feats'],'attributes':self.sheet_rules.config['attributes'],
+                    'help':'Первый уровень: человек с универсальным наследием, готовые классовые сборки. Характеристики, владения и снаряжение рассчитываются по выбранной сборке.'}}
+
     def read(self, room: str) -> dict:
-        with self.store._connection() as c:return self._draft(c,room)
+        with self.store._connection() as c:return self.view_draft(self._draft(c,room))
 
     def event(self, c, room: str, key: str, sender: str, text: str, *, choices=None, metadata=None) -> None:
         body={'schema_version':1,'type':'chat.message','sender':sender,'text':text,'choices':choices or [],
@@ -101,7 +115,7 @@ class HeroLibrary:
     def execute(self, command: dict, key: str) -> dict:
         try:UUID(key)
         except (ValueError,TypeError,AttributeError):raise ValueError('Нужен UUID операции.') from None
-        if set(command)-{'action','id','revision'}:raise ValueError('Неизвестные поля библиотеки героев.')
+        if set(command)-{'action','id','revision','proposal'}:raise ValueError('Неизвестные поля библиотеки героев.')
         encoded=json.dumps(command,sort_keys=True)
         with self.store._connection() as c:
             c.execute('BEGIN IMMEDIATE')
@@ -116,6 +130,22 @@ class HeroLibrary:
                 c.execute('INSERT INTO hero_drafts VALUES(?,0,?)',(room,json.dumps(state)))
                 self.event(c,room,str(uuid4()),'second','Давайте создадим вашего героя. Каким вы его представляете? Можно описать любимого персонажа или просто сказать «Не знаю, помоги выбрать».',choices=['Не знаю, помоги выбрать','Хочу сражаться мечом','Хочу играть магом'])
                 result={'draft_id':room}
+            elif action=='update_draft':
+                room=command.get('id')
+                if not isinstance(room,str):raise ValueError('Выберите карточку создания героя.')
+                state=self._draft(c,room)
+                if type(command.get('revision')) is not int or state['revision']!=command['revision']:
+                    raise MessageConflict('Карточка изменилась. Обновите её.')
+                if any(json.loads(r[0]).get('status') in ('running','chosen') for r in c.execute('SELECT body FROM ai_requests WHERE room_id=? AND started>?',(room,time.time()-120))):
+                    raise MessageConflict('Дождитесь ответа помощника.')
+                choice=proposal(command.get('proposal'))
+                for field in ('edicts','anathema'):
+                    choice.setdefault(field,state['proposal'].get(field,''))
+                if any(choice.get(k,'')!=state['proposal'].get(k,'') for k in ('name','class_id','general_feat','description','edicts','anathema')):
+                    state.pop('saved_hero_id',None)
+                state['proposal']=choice;state['revision']+=1
+                result=self.view_draft(state)
+                c.execute('UPDATE hero_drafts SET revision=?,body=? WHERE room_id=?',(state['revision'],json.dumps({k:v for k,v in state.items() if k not in ('revision','room_id')},ensure_ascii=False),room))
             elif action=='save':
                 room=command.get('id')
                 if not isinstance(room,str):raise ValueError('Выберите разговор создания персонажа.')
@@ -159,10 +189,10 @@ class HeroLibrary:
             count=c.execute("SELECT (SELECT COUNT(*) FROM ai_requests WHERE date(started,'unixepoch')=date(?,'unixepoch'))+COALESCE((SELECT count FROM ai_deleted_usage WHERE day=date(?,'unixepoch')),0)",(now,now)).fetchone()[0]
             if count>=self.ai.config['daily_request_limit']:raise ValueError('Достигнут дневной лимит ИИ.')
             if any(json.loads(r[0]).get('status') in ('running','chosen') for r in c.execute('SELECT body FROM ai_requests WHERE started>?',(now-120,))):raise MessageConflict('Другой запрос ИИ ещё выполняется.')
-            options={'classes':{k:{'name':v['name'],'description':v['description']} for k,v in RULES['classes'].items()},'feats':RULES['feats']}
+            options={'help':self.view_draft(state)['creation_rules']['help'],'classes':{k:{'name':v['name'],'description':v['description']} for k,v in RULES['classes'].items()},'feats':RULES['feats']}
             context={'rules':options,'current_proposal':state['proposal'],'conversation':state['conversation'][-12:],'player':command['text']}
             string={'type':'string'}
-            schema={'type':'object','properties':{'reply':string,'choices':{'type':'array','items':string},'proposal':{'type':'object','properties':{'name':string,'description':string,'class_id':{'type':'string','enum':['',*RULES['classes']]},'general_feat':{'type':'string','enum':['',*RULES['feats']]}},'required':['name','description','class_id','general_feat'],'additionalProperties':False}},'required':['reply','choices','proposal'],'additionalProperties':False}
+            schema={'type':'object','properties':{'reply':string,'choices':{'type':'array','items':string},'proposal':{'type':'object','properties':{'name':string,'description':string,'edicts':string,'anathema':string,'class_id':{'type':'string','enum':['',*RULES['classes']]},'general_feat':{'type':'string','enum':['',*RULES['feats']]}},'required':['name','description','class_id','general_feat','edicts','anathema'],'additionalProperties':False}},'required':['reply','choices','proposal'],'additionalProperties':False}
             payload={'model':self.ai.config['model'],'messages':[{'role':'system','content':PROMPT},{'role':'user','content':json.dumps(context,ensure_ascii=False)}],
                      'max_tokens':800,'temperature':0.4,'reasoning':{'enabled':False},'provider':{'max_price':{'prompt':0,'completion':0}},
                      'response_format':{'type':'json_schema','json_schema':{'name':'character_creation','strict':True,'schema':schema}}}
@@ -179,15 +209,20 @@ class HeroLibrary:
             with self.store._connection() as c:
                 c.execute('BEGIN IMMEDIATE');current=self._draft(c,room)
                 if current['revision']!=state['revision']:raise MessageConflict('Разговор изменился; ответ не применён.')
-                state['proposal']=choice;state.pop('saved_hero_id',None)
+                for field in ('edicts','anathema'):
+                    choice.setdefault(field,state['proposal'].get(field,''))
+                if any(choice.get(k,'')!=state['proposal'].get(k,'') for k in ('name','class_id','general_feat','description','edicts','anathema')):
+                    state.pop('saved_hero_id',None)
+                state['proposal']=choice
                 state['conversation']=(state['conversation']+[{'role':'user','text':command['text']},{'role':'assistant','text':decision['reply']}])[-24:]
                 state['revision']+=1
                 preview=make_character(choice,self.inventory_rules,self.sheet_rules) if all(choice[k] for k in ('name','class_id','general_feat')) else None
                 self.event(c,room,str(uuid5(UUID(key),'creator.reply')),'second',decision['reply'],choices=decision['choices'],metadata={'creator_revision':state['revision'],'character_preview':{**preview,'progression':describe(preview)} if preview else None})
                 c.execute('UPDATE hero_drafts SET revision=?,body=? WHERE room_id=?',(state['revision'],json.dumps(state,ensure_ascii=False),room))
-                trace.update(status='completed',response=response,result=state)
+                result=self.view_draft(state)
+                trace.update(status='completed',response=response,result=result)
                 c.execute('UPDATE ai_requests SET body=? WHERE room_id=? AND request_id=?',(json.dumps(trace,ensure_ascii=False),room,key))
-            return state
+            return result
         except (ValueError,KeyError,TypeError) as error:
             trace.update(status='failed',error='Ответ не применён: '+str(error))
             with self.store._connection() as c:c.execute('UPDATE ai_requests SET body=? WHERE room_id=? AND request_id=?',(json.dumps(trace,ensure_ascii=False),room,key))

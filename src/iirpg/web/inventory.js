@@ -119,6 +119,7 @@ export class InventoryPanel {
     this.root.querySelectorAll("button, input, select, textarea").forEach((control) => { control.disabled = disabled; });
     this.sheetWindow.readOnly=this.context().role==='player';
     this.sheetWindow.update(disabled);
+    $('.new-character',this.root).hidden=this.context().role==='player'||Boolean(this.state?.is_game);
     if(this.context().role==='player'){
       $('.manage-players',this.root).hidden=true;$('.new-character',this.root).hidden=true;
       this.root.querySelectorAll('[data-foreign=true]').forEach(control=>control.disabled=true);
@@ -230,7 +231,7 @@ export class InventoryPanel {
     title.append(node("span", "eyebrow", actor.kind === "npc" ? "NPC" : `ПЕРСОНАЖ ИГРОКА${owner ? ` · ${owner}` : ""}`), node("h3", "", actor.name));
     const actions = node("div", "inventory-actions");
     actions.append(button("Лист персонажа", () => { this.error.hidden = true; this.sheetWindow.open(actor.id); }));
-    if(this.context().role!=="player")actions.append(button("Изменить", () => this.editCharacter(actor)), button("Удалить", async () => {
+    if(this.context().role!=="player"&&!this.state.is_game)actions.append(button("Изменить", () => this.editCharacter(actor)), button("Удалить", async () => {
       if (confirm(`Удалить персонажа «${actor.name}» и все его предметы?`)) await this.mutate("delete_character", {}, { id: actor.id });
     }));
     header.append(title, actions);

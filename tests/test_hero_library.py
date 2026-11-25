@@ -79,7 +79,9 @@ class HeroLibraryTests(unittest.TestCase):
         self.assertNotEqual(characters[0]['id'],characters[1]['id'])
         self.assertTrue(set(i['id'] for i in characters[0]['items']).isdisjoint(i['id'] for i in characters[1]['items']))
         self.assertTrue(all(c['build']['spent']==0 and c['progression']['slots_remaining']==2 for c in characters))
-        self.roster.execute(rooms[0],{'action':'update_character','revision':self.roster.read(rooms[0])['revision'],'id':characters[0]['id'],'data':{'sheet':{'values':{'hp_current':3}}}},str(uuid4()))
+        from iirpg.character_resources import save_character
+        characters[0]['sheet']['values']['hp_current']=3
+        with self.store._connection() as c:save_character(c,rooms[0],characters[0])
         command={'action':'delete','id':saved};key=str(uuid4())
         deleted=self.library.execute(command,key)
         self.assertEqual(self.library.execute(command,key),deleted)
@@ -118,3 +120,61 @@ class HeroLibraryTests(unittest.TestCase):
         self.assertEqual(self.client.calls,[])
         with self.assertRaises(KeyError):self.library.read(self.room)
         with self.assertRaises(ValueError):self.library.respond(room,{'revision':True,'text':'Привет'},str(uuid4()))
+
+    def test_manual_card_is_validated_and_saves_without_ai_or_quota(self):
+        room=self.draft();self.library.ai.config['daily_request_limit']=0
+        initial=self.library.read(room)
+        self.assertIsNone(initial['preview']);self.assertIn('class_id',initial['missing'])
+        choice={**self.client.choice,'edicts':'Помогать потерявшимся.','anathema':'Предавать доверие.'}
+        key=str(uuid4());command={'action':'update_draft','id':room,'revision':0,'proposal':choice}
+        state=self.library.execute(command,key)
+        self.assertEqual(self.library.execute(command,key),state)
+        self.assertEqual(state['preview']['attributes']['intelligence'],4)
+        self.assertEqual(state['preview']['sheet']['values']['hp_max'],16)
+        self.assertEqual(state['preview']['sheet']['values']['edicts'],choice['edicts'])
+        self.assertEqual(state['preview']['sheet_statistics']['armor_class'],15)
+        saved=self.action('save',id=room,revision=state['revision'])['hero_id']
+        hero=next(h for h in self.library.list()['heroes'] if h['id']==saved)
+        self.assertEqual(hero['sheet']['values']['anathema'],choice['anathema'])
+        self.assertEqual(self.client.calls,[])
+
+    def test_manual_card_rejects_raw_stats_unknown_options_and_stale_changes(self):
+        room=self.draft();before=self.library.read(room)
+        for bad in ({**self.client.choice,'attributes':{'strength':9}},
+                    {**self.client.choice,'class_id':'god'},
+                    {**self.client.choice,'general_feat':'immortality'},
+                    {**self.client.choice,'edicts':'a'*1001}):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):self.action('update_draft',id=room,revision=0,proposal=bad)
+                self.assertEqual(self.library.read(room),before)
+        self.action('update_draft',id=room,revision=0,proposal=self.client.choice)
+        with self.assertRaises(MessageConflict):self.action('update_draft',id=room,revision=0,proposal=self.client.choice)
+        self.assertEqual(self.client.calls,[])
+
+    def test_partial_card_persists_and_assistant_receives_manual_choices(self):
+        room=self.draft();choice=dict(name='Нора',class_id='',general_feat='',description='Хочу искать тайны.',edicts='Не бросать друзей.',anathema='')
+        state=self.action('update_draft',id=room,revision=0,proposal=choice)
+        self.assertIsNone(state['preview']);self.assertEqual(state['proposal'],choice)
+        with self.assertRaises(ValueError):self.action('save',id=room,revision=state['revision'])
+        result=self.respond(room,'Помоги выбрать класс.')
+        sent=json.loads(self.client.calls[-1]['messages'][1]['content'])
+        self.assertEqual(sent['current_proposal'],choice)
+        self.assertEqual(result['preview']['sheet']['values']['edicts'],choice['edicts'])
+
+    def test_card_update_is_blocked_while_assistant_answers(self):
+        room=self.draft();original=self.client.complete
+        def complete(payload,timeout):
+            with self.assertRaises(MessageConflict):self.action('update_draft',id=room,revision=0,proposal=self.client.choice)
+            return original(payload,timeout)
+        self.client.complete=complete
+        self.respond(room)
+        self.assertEqual(self.library.read(room)['revision'],1)
+
+    def test_advice_without_changes_does_not_duplicate_saved_hero(self):
+        room=self.draft();state=self.respond(room)
+        saved=self.action('save',id=room,revision=state['revision'])['hero_id']
+        count=len(self.library.list()['heroes'])
+        state=self.respond(room,'Объясни выбранный перк, карточку не меняй.')
+        self.assertEqual(state['saved_hero_id'],saved)
+        self.assertEqual(self.action('save',id=room,revision=state['revision'])['hero_id'],saved)
+        self.assertEqual(len(self.library.list()['heroes']),count)

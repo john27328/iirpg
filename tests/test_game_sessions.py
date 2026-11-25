@@ -36,7 +36,9 @@ class GameSessionTests(unittest.TestCase):
     def test_register_preserves_progress_and_invalid_scenario_creates_nothing(self):
         games=self.games();before=self.roster.read(self.room)
         self.act(games,'register',room_id=self.room);self.act(games,'register',room_id=self.room)
-        self.assertEqual(len(games.list()['games']),1);self.assertEqual(self.roster.read(self.room),before)
+        self.assertEqual(len(games.list()['games']),1)
+        after=self.roster.read(self.room);self.assertTrue(after.pop('is_game'));before.pop('is_game')
+        self.assertEqual(after,before)
         with self.assertRaises(ValueError):self.act(games,'create',scenario='no',name='Bad')
         self.assertEqual(len(games.list()['games']),1)
     def test_checkpoint_preserves_pending_player_roll_and_deleted_usage(self):

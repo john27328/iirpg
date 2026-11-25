@@ -155,9 +155,10 @@ class PlayerAidTests(unittest.TestCase):
     def test_downed_helper_is_not_asked_to_roll(self):
         self.prepare_help()
         roster = self.server.roster.read(self.room)
-        status, _ = self.request(self.root + '/roster', {'action': 'update_character', 'revision': roster['revision'],
-            'id': self.players[1]['character_id'], 'data': {'sheet': {'values': {'hp_current': 0}}}})
-        self.assertEqual(status, 200)
+        from iirpg.character_resources import save_character
+        helper=next(a for a in roster['characters'] if a['id']==self.players[1]['character_id'])
+        helper['sheet']['values']['hp_current']=0
+        with self.server.service.store._connection() as c:save_character(c,self.room,helper)
         state = self.attempt()
         self.assertEqual(state['pending_check']['character_id'], self.players[0]['character_id'])
         self.assertEqual(self.rolls, [])

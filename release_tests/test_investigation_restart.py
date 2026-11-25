@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import test_campaign_persistence as fixture
 from test_restart import running_server
+from iirpg.character_resources import save_character
 
 
 class InvestigationRestartTests(unittest.TestCase):
@@ -25,8 +26,8 @@ class InvestigationRestartTests(unittest.TestCase):
                 players=server.games.participants.list(room)['players']
                 tokens=[parse_qs(p['fragment'])['access'][0] for p in players]
                 roster=server.roster.read(room)
-                server.roster.execute(room,{'action':'update_character','revision':roster['revision'],'id':second,
-                    'data':{'sheet':{'values':{'athletics_other':80}}}},str(uuid4()))
+                hero=next(a for a in roster['characters'] if a['id']==second);hero['sheet']['values']['athletics_other']=80
+                with server.service.store._connection() as c:save_character(c,room,hero)
                 def complete(payload,timeout):
                     if payload['response_format']['json_schema']['name']=='campaign_scene':
                         data=json.loads(payload['messages'][1]['content'])

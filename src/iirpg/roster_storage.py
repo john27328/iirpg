@@ -94,11 +94,16 @@ class RosterStore:
                 "build_rules": BUILD_RULES,
                 "players": players, "characters": characters}
 
+    def is_game(self, connection: sqlite3.Connection, room_id: str) -> bool:
+        return bool(connection.execute("SELECT 1 FROM sqlite_master WHERE name='game_sessions'").fetchone()
+                    and connection.execute('SELECT 1 FROM game_sessions WHERE room_id=?',(room_id,)).fetchone())
+
     def read(self, room_id: str) -> dict:
         with self.store._connection() as connection:
             # A consistent snapshot, including concurrent first initialization.
             connection.execute("BEGIN IMMEDIATE")
             state = self._load(connection, room_id)
+            state["is_game"]=self.is_game(connection,room_id)
         rules = InventoryRules(state["rules"])
         sheet_rules = CharacterRules(state["character_rules"])
         for character in state["characters"]:
@@ -128,6 +133,11 @@ class RosterStore:
             revision = integer(command.get("revision"), "Ревизия", 0, 9223372036854775806)
             if revision != state["revision"]:
                 raise MessageConflict("Данные изменились в другом окне. Обновите список и повторите изменение.")
+            if self.is_game(connection,room_id):
+                action=command.get('action')
+                character=next((a for a in state['characters'] if a['id']==command.get('id')),None)
+                if action=='create_character' or action in ('configure_build','update_character','delete_character') and character:
+                    raise PermissionError('В игре параметры персонажей меняются только по правилам. Характеристики и сборку героя выбирают при создании.')
             if command.get('action')=='delete_character' and connection.execute("SELECT 1 FROM sqlite_master WHERE name='session_participants'").fetchone():
                 if connection.execute('SELECT 1 FROM session_participants WHERE room_id=? AND character_id=?',(room_id,command.get('id'))).fetchone():
                     raise MessageConflict('Сначала уберите участника из группы в меню приглашений.')

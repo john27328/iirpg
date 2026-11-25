@@ -75,3 +75,7 @@ body[data-role="player"] .owner-only, body[data-role="player"] a[href^="/debug"]
 #invitation-links input {width:100%;margin:10px 0;}
 #invitation-links a {display:block;margin-top:8px;}
 #participants-panel {margin:20px 0;padding:16px;border:1px solid var(--border,#384238);border-radius:12px;}
+
+.hero-creation-layout{display:grid;grid-template-columns:minmax(260px,1fr) minmax(300px,1.25fr);gap:24px}.hero-card-statistics{display:grid;grid-template-columns:1fr auto;gap:6px 16px}.hero-card-statistics dd{margin:0;font-weight:600}#hero-card-preview{padding:14px;border:1px solid var(--line);border-radius:9px}#hero-card-preview:empty{display:none}@media(max-width:850px){.hero-creation-layout{grid-template-columns:1fr}}
+
+#hero-card-form label{display:flex;flex-direction:column;gap:7px;font-size:13px;color:var(--muted)}#hero-card-form input,#hero-card-form select,#hero-card-form textarea{width:100%;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:7px;background:#191f1a;color:#e9eee9;font:inherit}#hero-card-form textarea{resize:vertical}#hero-card-form input:focus-visible,#hero-card-form select:focus-visible{outline:2px solid var(--green);outline-offset:2px}#hero-card-form .muted{margin:0;font-size:12px;line-height:1.5}

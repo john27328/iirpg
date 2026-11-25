@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 from urllib.parse import parse_qs
 from uuid import uuid4
 from iirpg.server import ChatHTTPServer
+from iirpg.character_resources import save_character
 from iirpg.application import ChatService
 from iirpg.dice import DiceTool
 from test_restart import running_server
@@ -21,7 +22,8 @@ class PlanRestartTests(unittest.TestCase):
             room=server.games.execute({'action':'create','name':'Перезапуск','scenario':'missing-book'},str(uuid4()))['room_id']
             state=server.adventure.read(room);actor=state['character_id']
             roster=server.roster.read(room);hero=next(a for a in roster['characters'] if a['id']==actor)
-            server.roster.execute(room,{'action':'update_character','revision':roster['revision'],'id':actor,'data':{'sheet':{'values':{'athletics_other':80}}}},str(uuid4()))
+            hero['sheet']['values']['athletics_other']=80
+            with server.service.store._connection() as c:save_character(c,room,hero)
             steps=[{'rule':'stow','target':'inventory:'+i['id']} for i in hero['items'] if i.get('hands')]
             proposal={'intent':'act','reply':'Попытка.','steps':steps+[{'rule':'move','target':'store'},{'rule':'force_open','target':'chest'},{'rule':'take','target':'book'}]}
             class Client:
@@ -119,8 +121,8 @@ class PlanRestartTests(unittest.TestCase):
                 tokens=[parse_qs(p['fragment'])['access'][0] for p in players]
                 for actor in ids:
                     roster=server.roster.read(room)
-                    server.roster.execute(room,{'action':'update_character','revision':roster['revision'],'id':actor,
-                        'data':{'sheet':{'values':{'athletics_other':80}}}},str(uuid4()))
+                    hero=next(a for a in roster['characters'] if a['id']==actor);hero['sheet']['values']['athletics_other']=80
+                    with server.service.store._connection() as c:save_character(c,room,hero)
                 def say(actor,steps):
                     client.steps=steps;state=server.adventure.read(room)
                     return server.adventure.execute(room,{'revision':state['revision'],'character_id':actor,'text':'Выполняю заявленное действие.'},str(uuid4()))
