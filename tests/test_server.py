@@ -61,9 +61,9 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(json.loads(body)['characters'][0]['name'],heroes[2]['name'])
 
     def test_page_and_static_assets_are_served(self) -> None:
-        for path, marker in [("/", "Ваша история."), ("/debug", "Внутренние сущности"),
+        for path, marker in [("/", 'id="page-title"'), ("/debug", "Внутренние сущности"),
                              ("/debug/", "ИНСПЕКТОР КОМНАТЫ"), ("/debug.js", "class DebugPanel"),
-                             ("/app.js", "createChatClass"), ("/chat.js", "class Chat"), ("/hero-menu.js", "class HeroMenu"), ("/styles.css", ".chats")]:
+                             ("/app.js", "createChatClass"), ("/chat.js", "class Chat"), ("/hero-menu.js", "class HeroMenu"), ("/styles.css", ".chats"), ("/game-ui.css", ".creator-pane")]:
             status, body = self.request(path)
             self.assertEqual(status, 200)
             self.assertIn(marker, body.decode())

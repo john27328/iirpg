@@ -6,7 +6,7 @@ export class HeroMenu {
   constructor({request, Chat, createId, locked}) {
     Object.assign(this,{request,createId,locked,draftId:null,state:null,data:null,busy:false,pending:null,cardDirty:false});
     this.chat=new Chat('first','02','Опишите героя своими словами. Знать правила необязательно.',{
-      id:'creator',container:'#hero-creation-chat',title:'Помощник создания персонажа',badge:'ГЕРОЙ',assistantName:'Помощник',thinking:'Помощник думает…',
+      id:'creator',container:'#hero-creation-chat',title:'Помощник героя',badge:'ГЕРОЙ',assistantName:'Помощник',thinking:'Помощник думает…',
       enabled:()=>Boolean(this.draftId&&this.state),
       onUpdate:chat=>{
         q('#hero-creator-close').disabled=chat.busy||this.busy;
@@ -29,12 +29,20 @@ export class HeroMenu {
       renderExtras:(message,item)=>this.preview(message,item)
     });
     q('#hero-new').addEventListener('click',()=>this.newDraft());
-    q('#hero-creator-close').addEventListener('click',async()=>{
-      if(this.chat.busy||this.busy)return;this.busy=true;this.updateCard();
-      try{if(this.cardDirty)await this.applyCard();q('#hero-creator').hidden=true;await this.refresh();}
-      catch(error){q('#hero-card-status').textContent=error.message;}
-      finally{this.busy=false;this.updateCard();}
-    });
+    q('#hero-creator-close').addEventListener('click',()=>this.closeCreator());
+    q('#hero-creator').addEventListener('cancel',event=>{event.preventDefault();this.closeCreator();});
+    this.mobile=matchMedia('(max-width:850px)');this.activePane='card';
+    this.mobile.addEventListener('change',()=>this.setPane(this.activePane));
+    for(const pane of ['card','chat']){
+      const tab=q('#creator-tab-'+pane);
+      tab.addEventListener('click',()=>this.setPane(pane));
+      tab.addEventListener('keydown',event=>{
+        if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){
+          event.preventDefault();const next=event.key==='Home'?'card':event.key==='End'?'chat':pane==='card'?'chat':'card';
+          this.setPane(next);q('#creator-tab-'+next).focus();
+        }
+      });
+    }
     q('#game-hero').addEventListener('change',()=>this.summary());
     this.card=q('#hero-card-form');
     this.card.addEventListener('input',()=>{this.cardDirty=true;this.cardHints();this.updateCard();});
@@ -45,6 +53,24 @@ export class HeroMenu {
       finally{this.busy=false;this.updateCard();}
     });
     q('#hero-card-save').addEventListener('click',()=>this.saveCard());
+  }
+
+  async closeCreator(){
+    if(this.isBusy())return;this.busy=true;this.updateCard();
+    try{
+      if(this.cardDirty)await this.applyCard();
+      q('#hero-creator').close();q('#hero-creator').hidden=true;document.body.classList.remove('creator-open');await this.refresh();
+    }catch(error){q('#hero-card-status').textContent=error.message;this.setPane('card');}
+    finally{this.busy=false;this.updateCard();}
+  }
+
+  setPane(pane){
+    this.activePane=pane;
+    for(const name of ['card','chat']){
+      const selected=name===pane,tab=q('#creator-tab-'+name);
+      tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1;
+      q('#creator-'+name+'-pane').hidden=this.mobile.matches&&!selected;
+    }
   }
 
   isBusy(){return this.busy||this.chat.busy;}
@@ -86,13 +112,13 @@ export class HeroMenu {
 
   summary(){
     const hero=this.data?.heroes.find(h=>h.id===q('#game-hero').value),root=q('#hero-choice-summary');root.replaceChildren();
-    if(hero)root.append(node('p',hero.progression.features),node('p','Снаряжение: '+hero.items.map(i=>i.name).join(', ')));
+    if(hero){const details=node('details');details.append(node('summary','О выбранном герое'),node('p',hero.progression.features),node('p','Снаряжение: '+hero.items.map(i=>i.name).join(', ')));root.append(details);}
   }
 
   async newDraft(){
     if(this.locked())return;this.busy=true;
     try{const result=await this.operation({action:'new_draft'});await this.openDraft(result.draft_id,true);}
-    catch(e){this.status(e.message);}finally{this.busy=false;}
+    catch(e){this.status(e.message);}finally{this.busy=false;this.updateCard();}
   }
 
   async openDraft(id,creating=false){
@@ -100,8 +126,10 @@ export class HeroMenu {
     if(this.draftId!==id&&this.chat.hasDraft()&&!confirm('Открыть другой разговор? Неотправленный текст будет очищен.'))return;
     try{
       if(this.cardDirty)await this.applyCard();
-      this.draftId=id;this.state=null;this.cardDirty=false;this.chat.reset();q('#hero-creator').hidden=false;
-      await this.refreshDraft();q('#hero-creator').scrollIntoView({behavior:'smooth',block:'start'});this.chat.input.focus();
+      this.draftId=id;this.state=null;this.cardDirty=false;this.chat.reset();
+      await this.refreshDraft();this.setPane('card');
+      const dialog=q('#hero-creator');dialog.hidden=false;if(!dialog.open)dialog.showModal();document.body.classList.add('creator-open');
+      q('#hero-creator-close').focus({preventScroll:true});
     }catch(e){this.status(e.message);}
   }
 
@@ -125,10 +153,12 @@ export class HeroMenu {
     if(!this.card)return;
     if(this.data)q('#game-create-button').disabled=!this.data.heroes.length||this.locked();
     const busy=this.isBusy()||!this.state;
+    q('#hero-creator-close').disabled=this.isBusy();
+    q('#hero-card-apply').disabled=busy;
     this.card.querySelectorAll('input,textarea,select,button').forEach(control=>control.disabled=busy);
     q('#hero-card-save').disabled=busy||Boolean(this.state?.saved_hero_id)||(!this.cardDirty&&!this.state?.preview);
     q('#hero-creation-chat').querySelectorAll('.save-created-hero').forEach(button=>{button.disabled=busy||Number(button.dataset.revision)!==this.state?.revision||Boolean(this.state?.saved_hero_id);});
-    if(this.cardDirty&&!busy)q('#hero-card-status').textContent='Изменения ещё не применены. Обновите карточку, чтобы проверить параметры.';
+    if(this.cardDirty&&!busy)q('#hero-card-status').textContent='Есть изменения. Нажмите «Проверить», чтобы обновить параметры.';
   }
 
   renderCard(){
@@ -144,13 +174,14 @@ export class HeroMenu {
     }
     q('#hero-card-help').textContent=rules.help;this.cardHints();
     const root=q('#hero-card-preview');root.replaceChildren();const hero=this.state.preview;
+    q('#hero-preview-panel').hidden=!hero;
     if(hero){
       root.append(node('h4',hero.name),node('p',`${hero.sheet.values.ancestry} · ${hero.progression.name} · 1 уровень`));
       const stats=node('dl','','hero-card-statistics');
       const entries=[...Object.entries(hero.attributes).map(([key,value])=>[rules.attributes[key]?.label||key,(value>=0?'+':'')+value]),
         ['ОЗ',hero.sheet.values.hp_max],['Класс брони',hero.sheet_statistics.armor_class],['Восприятие',hero.sheet_statistics.perception],
         ['Скорость',hero.sheet.values.speed+(hero.progression.feat.speed||0)+' футов']];
-      for(const [label,value] of entries)stats.append(node('dt',label),node('dd',String(value)));
+      for(const [label,value] of entries){const stat=node('div');stat.append(node('dt',label),node('dd',String(value)));stats.append(stat);}
       root.append(stats,node('p',hero.progression.feat.name+': '+hero.progression.feat.description),
         node('p','Снаряжение: '+hero.items.map(item=>item.name).join(', ')));
       if(hero.progression.slots_max)root.append(node('p','Заклинания: '+Object.values(hero.progression.spells).map(spell=>spell.name).join(', ')));
@@ -178,8 +209,9 @@ export class HeroMenu {
   preview(message,item){
     const hero=message.metadata?.character_preview;if(!hero)return;
     const card=node('section','','character-preview');
-    card.append(node('h4',hero.name),node('p',`${hero.progression.name} · 1 уровень · ${hero.sheet.values.hp_max} ОЗ`),node('p',hero.sheet.values.ancestry),node('p',hero.progression.feat.name+': '+hero.progression.feat.description),node('p',hero.sheet.values.description),node('p','Снаряжение: '+hero.items.map(i=>i.name).join(', ')));
-    if(hero.progression.slots_max)card.append(node('p',`Ячеек I ранга: ${hero.progression.slots_max}. Заклинания: `+Object.values(hero.progression.spells).map(s=>s.name).join(', ')));
+    card.append(node('h4',hero.name),node('p',`${hero.progression.name} · 1 уровень · ${hero.sheet.values.hp_max} ОЗ`));
+    const view=node('button','Открыть карточку','button-secondary');view.type='button';
+    view.addEventListener('click',()=>{this.setPane('card');q('#hero-preview-panel').open=true;});card.append(view);
     const b=node('button','Сохранить героя','save-created-hero');b.type='button';b.dataset.revision=message.metadata.creator_revision;
     b.addEventListener('click',async()=>{
       if(this.isBusy()||Number(b.dataset.revision)!==this.state.revision)return;

@@ -17,3 +17,20 @@
 .embedded-combat .topbar,.embedded-combat .battle-heading>button{display:none}.embedded-combat .battle-workspace{max-width:none;padding:0 12px 20px}.embedded-combat .battle-heading{padding-top:16px}
 
 #battle-chat{display:block;margin-top:12px}#battle-chat .chat{min-width:0;width:100%;height:auto;min-height:400px}#battle-chat .message-list{height:320px;min-height:200px;max-height:55vh}#battle-chat .chat-header{padding:15px}#battle-chat .composer{padding:12px}#battle-chat textarea{min-height:80px}.battle-workspace .message .reply-choice{width:auto}
+
+/* Keep tactical controls tappable without changing the map tile geometry. */
+@media(max-width:760px){
+ .battle-workspace button:not(.battle-cell){min-height:44px;}
+ .battle-workspace select{font-size:16px;min-height:44px;}
+ .battlefield .section-heading{flex-wrap:wrap;}
+ .map-zoom button{min-width:44px;font-size:18px;}
+}
+
+/* The shared chat composer must not inherit full-width legacy intent buttons. */
+#battle-chat #battle-intent{margin-top:0;padding:12px;}
+#battle-chat #battle-intent textarea{width:auto;min-width:0;min-height:44px;max-height:120px;flex:1;margin:0;padding:0;font-size:16px;}
+#battle-chat #battle-intent .send-button{width:44px;min-width:44px;height:44px;min-height:44px;flex:0 0 44px;margin:0;padding:0;}
+.battle-workspace .follow-label{white-space:normal;min-height:44px;}
+.battle-workspace .follow-label input{flex-shrink:0;}
+#battle-chat .avatar{flex-shrink:0;}
+@media(max-width:760px){.battle-workspace .message-text{font-size:15px;}}

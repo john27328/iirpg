@@ -15,6 +15,7 @@ try{
  await form.locator('[name=edicts]').fill('Помогать потерявшимся.');
  await page.locator('#hero-card-apply').click();
  await page.waitForFunction(()=>document.querySelector('#hero-card-status').textContent.includes('проверена'));
+ await page.locator('#hero-preview-panel').evaluate(element=>element.open=true);
  if(!(await page.locator('#hero-card-preview').innerText()).includes('16'))throw Error('Missing computed HP');
  const usageBefore=await page.evaluate(async()=> (await (await fetch('/api/ai')).json()).requests_today);
  if(usageBefore!==0)throw Error('Manual card called AI');
@@ -49,6 +50,7 @@ try{
  if(!locked)throw Error('Owner API bypassed lock');
  await page.locator('.sheet-close').click();
  if(!await page.locator('#games-menu').isVisible())await page.locator('#games-toggle').click();
+ await page.locator('#hero-library-panel').evaluate(element=>element.open=true);
  await page.getByRole('button',{name:'Продолжить создание: Тестовая Нора',exact:true}).click();
  await page.setViewportSize({width:390,height:844});
  const columns=await page.locator('.hero-creation-layout').evaluate(element=>getComputedStyle(element).gridTemplateColumns);
@@ -56,6 +58,7 @@ try{
  await page.locator('#hero-creator').screenshot({path:'.local/hero-card-mobile.png'});
  await form.locator('[name=description]').fill('Описание сохранится при закрытии.');
  await page.locator('#hero-creator-close').click();
+ await page.locator('#hero-library-panel').evaluate(element=>element.open=true);
  await page.getByRole('button',{name:'Продолжить создание: Тестовая Нора',exact:true}).click();
  if(await form.locator('[name=description]').inputValue()!=='Описание сохранится при закрытии.')throw Error('Closing creator lost manual draft');
  if(errors.length)throw Error(errors.join('; '));

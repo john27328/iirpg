@@ -22,7 +22,7 @@ const enemyTurn=()=>battle?.status==='active'&&side(active(),battle.turn)==='ene
 const canAct=()=>session.ready&&!busy&&!retry&&playerTurn();
 const session=createRoomSession(async()=>{
   if(lastRoom!==session.room){lastRoom=session.room;selectedThread=null;q('#auto-npc').checked=false;clearTimeout(npcTimer);npcTimer=null;npcSteps=0;retry=null;chosenHeroes=new Set();battle=null;scene=null;roster=null;selectedPosition=null;selectedPreset=null;targetId='';objectId='';draftActor=null;battleChat.reset();partyKey=mapKey=queueKey=journalKey=intentsKey='';q('#action-error').hidden=true;q('#battle-preparation').open=true;}
-  q('#battle-preparation').hidden=session.identity.role==='player';
+  q('#battle-preparation').hidden=!developer||session.identity.role==='player';
   q('#party-limit').textContent='до '+(session.identity.max_players||8)+' героев';
   await refresh();
 });

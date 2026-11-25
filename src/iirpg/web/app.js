@@ -316,20 +316,24 @@ const multiplayer = isDebug ? null : new MultiplayerMenu({request,context,create
 
 for (const [id, showInventory] of [["#show-chat", false], ["#show-inventory", true]]) {
   $(id)?.addEventListener("click", () => {
+    if(!isDebug)setGamesOpen(false);
     $("#chats").hidden = showInventory;
     $("#inventory").hidden = !showInventory;
     $("#battle-pane").hidden=true;$("#combat-frame").src="about:blank";$("#show-battle").setAttribute("aria-pressed","false");
     $("#show-chat").setAttribute("aria-pressed", String(!showInventory));
     $("#show-inventory").setAttribute("aria-pressed", String(showInventory));
     if (showInventory) inventory.refresh(true).catch((error) => inventory.showError(error));
+    if(matchMedia('(max-width:680px)').matches)$(showInventory?'#inventory':'#chats').scrollIntoView({block:'start'});
   });
 }
 
 function showBattle(){
   if(isDebug||!ready)return;
+  setGamesOpen(false);
   $('#chats').hidden=true;$('#inventory').hidden=true;$('#battle-pane').hidden=false;
   $('#show-chat').setAttribute('aria-pressed','false');$('#show-inventory').setAttribute('aria-pressed','false');$('#show-battle').setAttribute('aria-pressed','true');
   $('#combat-frame').src='/?view=combat#'+roomFragment();
+  if(matchMedia('(max-width:680px)').matches)$('#battle-pane').scrollIntoView({block:'start'});
 }
 $('#show-battle')?.addEventListener('click',showBattle);
 
@@ -476,7 +480,7 @@ async function showGames(){
   if(identity.role!=='player'){await heroes.refresh();await multiplayer.refresh();}
   $('#game-save').disabled=!ready||gameLocked();
   const previousChoice=$('#game-scenario').value;
-  $('#game-scenario').replaceChildren(...(data.campaigns||[]).map(c=>new Option(c.name+(c.format==='solo_evening'?' · соло':' · кампания'),'campaign:'+c.id)),...data.scenarios.filter(s=>s.id!=='evening-hub').map(s=>new Option(s.name,s.id)));
+  $('#game-scenario').replaceChildren(...(data.campaigns||[]).map(c=>new Option((c.format==='solo_evening'?'Соло · ':'Кампания · ')+c.name,'campaign:'+c.id)),...data.scenarios.filter(s=>s.id!=='evening-hub').map(s=>new Option(s.name,s.id)));
   if([...$('#game-scenario').options].some(o=>o.value===previousChoice))$('#game-scenario').value=previousChoice;
   selectEveningFormat();
   $('#games-list').replaceChildren(...data.games.map(game=>{
@@ -494,7 +498,7 @@ async function showGames(){
 function switchGame(id,discardConfirmed=false){
  if(gameLocked())return;
  if(!discardConfirmed&&(inventory?.hasDraft()||chats.some(c=>c.hasDraft()))&&!confirm('Переключить игру? Неотправленный черновик будет очищен.'))return;
- $('#games-menu').hidden=true;$('#combat-frame').src='about:blank';
+ $('#games-menu').hidden=true;$('#games-toggle').setAttribute('aria-expanded','false');$('#combat-frame').src='about:blank';
  location.href='/#'+new URLSearchParams({room:id,...(accessToken?{access:accessToken}:{})});
  if(id===room)location.reload();
 }
@@ -515,7 +519,17 @@ async function runGame(command){
  }catch(e){$('#games-status').textContent=e.message;if(e.status)gameOperation=null;}
  finally{gameBusy=false;await showGames();}
 }
-$('#games-toggle')?.addEventListener('click',()=>{$('#games-menu').hidden=!$('#games-menu').hidden;if(!$('#games-menu').hidden){$('#combat-frame').contentWindow?.postMessage({type:'pause-for-game-menu'},location.origin);showGames();}});
+function setGamesOpen(open){
+ $('#games-menu').hidden=!open;$('#games-toggle').setAttribute('aria-expanded',String(open));
+ $('#show-games')?.setAttribute('aria-pressed',String(open));
+ for(const [button,panel] of [['#show-chat','#chats'],['#show-inventory','#inventory'],['#show-battle','#battle-pane']])$(button).setAttribute('aria-pressed',String(!open&&!$(panel).hidden));
+ if(open){
+  $('#combat-frame').contentWindow?.postMessage({type:'pause-for-game-menu'},location.origin);showGames();
+  if(matchMedia('(max-width:680px)').matches)$('#games-menu').scrollIntoView({block:'start'});
+ }
+}
+$('#games-toggle')?.addEventListener('click',()=>setGamesOpen($('#games-menu').hidden));
+$('#show-games')?.addEventListener('click',()=>setGamesOpen(true));
 $('#game-save')?.addEventListener('click',()=>{if(ready)runGame({action:'save',room_id:room});});
 $('#game-create')?.addEventListener('submit',e=>{e.preventDefault();runGame({action:'create',name:$('#game-name').value,...($('#game-scenario').value.startsWith('campaign:')?{campaign:$('#game-scenario').value.slice(9)}:{scenario:$('#game-scenario').value}),hero_id:$('#game-hero').value,...(multiplayer.party()?{party:multiplayer.party()}:{})});});
 
@@ -523,7 +537,7 @@ $('#game-create')?.addEventListener('submit',e=>{e.preventDefault();runGame({act
 function selectEveningFormat(){
  const solo=$('#game-scenario')?.value==='campaign:solo-evening';
  const count=$('#game-player-count');if(!count)return;
- if(solo)count.value='1';count.disabled=solo;multiplayer?.creationRows();
+ if(solo)count.value='1';count.disabled=solo;count.closest('label').hidden=solo;multiplayer?.creationRows();
 }
 $('#game-scenario')?.addEventListener('change',selectEveningFormat);
 function renderEvening(data){
@@ -557,3 +571,8 @@ async function controlEvening(action){
 $('#evening-start')?.addEventListener('click',()=>controlEvening('start'));
 $('#evening-finish')?.addEventListener('click',()=>controlEvening('finish'));
 $('#evening-abandon')?.addEventListener('click',()=>controlEvening('abandon'));
+
+if(!isDebug&&window.visualViewport){
+ const updateViewport=()=>document.documentElement.style.setProperty('--viewport-height',window.visualViewport.height+'px');
+ window.visualViewport.addEventListener('resize',updateViewport);updateViewport();
+}

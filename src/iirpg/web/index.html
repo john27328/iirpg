@@ -2,11 +2,12 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="theme-color" content="#111414">
   <title>Игра — IIRPG</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/game-ui.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body data-view="game">
@@ -18,25 +19,25 @@
     </header>
     <main>
       <section class="intro" aria-labelledby="page-title">
-        <div><div class="eyebrow">ПРИКЛЮЧЕНИЕ <span> / IIRPG</span></div><h1 id="page-title">Ваша история. <span>Ваш следующий ход.</span></h1><p>Продолжайте приключение, следите за персонажами и собирайте снаряжение.</p></div>
-        <div class="room-actions"><button type="button" id="games-toggle" class="button-secondary">Сеансы</button><button id="copy-link" class="button-secondary" disabled>Скопировать ссылку</button><button id="new-room" hidden class="button-icon" title="Новый диалог" aria-label="Начать новый диалог" disabled>＋</button></div>
+        <div><div class="eyebrow">ПРИКЛЮЧЕНИЕ <span> / IIRPG</span></div><h1 id="page-title">Ваше приключение</h1><p>Исследуйте мир, общайтесь и решайте, что делать дальше.</p></div>
+        <div class="room-actions"><button type="button" id="games-toggle" aria-controls="games-menu" aria-expanded="false" class="button-secondary">Сеансы</button><button id="copy-link" class="button-secondary" disabled>Скопировать ссылку</button><button id="new-room" hidden class="button-icon" title="Новый диалог" aria-label="Начать новый диалог" disabled>＋</button></div>
       </section>
       <p id="group-status" role="status" class="notice" hidden></p>
       <p id="player-identity" class="notice" hidden></p>
       <div id="notice" class="notice" role="alert" hidden></div>
       <form id="access-gate" class="notice access-gate" hidden><label for="access-key">Ключ доступа к диалогу</label><input id="access-key" type="password" autocomplete="current-password" placeholder="Вставьте ключ из вашей ссылки" required><button class="button-secondary" type="submit">Открыть чат</button></form>
       <section id="games-menu" class="battle-panel" hidden aria-label="Сеансы игры">
-        <h2>Мои игры</h2><p>Прогресс сохраняется автоматически. Кнопка «Сохранить» создаёт точку, к которой можно вернуться.</p>
-        <button class="owner-only" id="game-save" type="button">Сохранить текущую игру</button>
-        <section id="participants-panel" class="owner-only"><h3>Игроки и ссылки</h3><p>Каждому игроку — своя ссылка и герой. Группа путешествует вместе, в бою каждый управляет своим персонажем.</p><button id="enable-multiplayer" type="button">Создать ссылки для двух игроков</button><form id="invite-player" hidden><label>Имя игрока<input id="invite-name" maxlength="80" required></label><label>Готовый герой<select id="invite-hero"></select></label><button id="invite-add">Добавить игрока</button></form><div id="invitation-links"></div><p id="participants-status" role="status"></p></section>
-        <h3 class="owner-only">Новое приключение</h3>
+        <h2>Сеансы</h2><div id="games-list"></div><p>Прогресс сохраняется автоматически.</p>
+        <button class="owner-only" id="game-save" type="button">Создать точку сохранения</button>
+        <details id="participants-panel" class="owner-only menu-details"><summary>Игроки и ссылки</summary><p>Каждому игроку — своя ссылка и герой. Группа путешествует вместе, в бою каждый управляет своим персонажем.</p><button id="enable-multiplayer" type="button">Создать ссылки для двух игроков</button><form id="invite-player" hidden><label>Имя игрока<input id="invite-name" maxlength="80" required></label><label>Готовый герой<select id="invite-hero"></select></label><button id="invite-add">Добавить игрока</button></form><div id="invitation-links"></div><p id="participants-status" role="status"></p></details>
+        <div class="section-heading owner-only"><h3>Новое приключение</h3><button id="hero-new" type="button" class="button-secondary">Создать персонажа</button></div>
         <form class="owner-only" id="game-create"><label>Название<input id="game-name" maxlength="100" value="Новое приключение" required></label><label>Приключение или кампания<select id="game-scenario"></select></label><label>Ваш герой<select id="game-hero" required></select></label><label>Игроков<input id="game-player-count" type="number" min="1" max="8" value="1" required></label><label id="first-player-name" hidden>Имя первого игрока<input id="game-player-name" maxlength="80" value="Игрок 1"></label><div id="extra-players"></div><button id="game-create-button">Новая игра</button></form>
         <div class="owner-only" id="hero-choice-summary"></div>
-        <section class="owner-only" aria-labelledby="heroes-title"><h3 id="heroes-title">Готовые герои</h3><p>Для каждой новой игры создаётся отдельная копия героя со стартовыми ресурсами и снаряжением.</p><button id="hero-new" type="button">Создать персонажа</button><div id="hero-library"></div><div id="hero-drafts"></div></section>
-        <section id="hero-creator" hidden aria-label="Создание персонажа с помощником"><div class="section-heading"><h3>Создаём персонажа</h3><button id="hero-creator-close" type="button">Вернуться к выбору героя</button></div><p>Заполните карточку сами или попросите помощника объяснить выбор. Параметры рассчитываются по сборке первого уровня.</p><div class="hero-creation-layout"><div><form id="hero-card-form" class="sheet-form-grid" novalidate><label>Имя<input name="name" maxlength="80" required></label><label>Класс<select name="class_id" required></select></label><p id="hero-class-help" class="muted wide-field"></p><label>Общий перк<select name="general_feat" required></select></label><p id="hero-feat-help" class="muted wide-field"></p><label class="wide-field">Образ и внешность<textarea name="description" maxlength="1000" rows="3"></textarea></label><label class="wide-field">Принципы: чему следует герой<textarea name="edicts" maxlength="1000" rows="2"></textarea></label><label class="wide-field">Табу: чего герой избегает<textarea name="anathema" maxlength="1000" rows="2"></textarea></label><p id="hero-card-help" class="muted wide-field"></p><div class="dialog-actions wide-field"><button type="submit" id="hero-card-apply" class="button-secondary">Обновить карточку</button><button type="button" id="hero-card-save" class="button-secondary">Сохранить героя</button></div></form><p id="hero-card-status" role="status"></p><section id="hero-card-preview" aria-label="Параметры нового героя" aria-live="polite"></section></div><div id="hero-creation-chat" class="chats game-chat"></div></div></section>
-        <p id="heroes-status" role="status"></p><p id="games-status" role="status"></p><div id="games-list"></div>
+        <details class="owner-only menu-details" id="hero-library-panel"><summary id="heroes-title">Готовые герои и черновики</summary><p>Для каждой новой игры создаётся отдельная копия героя со стартовыми ресурсами и снаряжением.</p><div id="hero-library"></div><div id="hero-drafts"></div></details>
+
+        <p id="heroes-status" role="status"></p><p id="games-status" role="status"></p>
       </section>
-      <nav class="workspace-tabs" aria-label="Разделы комнаты"><button type="button" id="show-chat" aria-pressed="true">Диалог</button><button type="button" id="show-inventory" aria-pressed="false">Персонажи и инвентарь</button><button type="button" id="show-battle" aria-pressed="false">Бой</button></nav>
+      <nav class="workspace-tabs" aria-label="Разделы комнаты"><button type="button" id="show-chat" aria-controls="chats" aria-pressed="true">Диалог</button><button type="button" id="show-inventory" aria-controls="inventory" aria-pressed="false">Персонаж</button><button type="button" id="show-battle" aria-pressed="false">Бой</button><button type="button" id="show-games" class="mobile-only" aria-controls="games-menu" aria-pressed="false">Сеансы</button></nav>
 
 
       <section id="evening-adventure" class="saved-game" hidden aria-label="Приключение на один вечер">
@@ -53,5 +54,45 @@
   </div>
 
 
+  <dialog id="hero-creator" hidden aria-labelledby="hero-creator-title" data-pane="card">
+    <header class="creator-header">
+      <div><span class="eyebrow">НОВЫЙ ГЕРОЙ</span><h2 id="hero-creator-title">Создаём персонажа</h2></div>
+      <button id="hero-creator-close" class="button-secondary" type="button" aria-label="Сохранить черновик и закрыть">Закрыть</button>
+    </header>
+    <p class="creator-intro">Заполните карточку или опишите задумку помощнику. Черновик сохранится, когда вы закроете окно.</p>
+    <div class="creator-tabs" role="tablist" aria-label="Создание героя">
+      <button id="creator-tab-card" type="button" role="tab" aria-selected="true" aria-controls="creator-card-pane">Карточка</button>
+      <button id="creator-tab-chat" type="button" role="tab" aria-selected="false" aria-controls="creator-chat-pane" tabindex="-1">Помощник ИИ</button>
+    </div>
+    <div class="hero-creation-layout">
+      <div id="creator-card-pane" class="creator-pane" role="tabpanel" aria-labelledby="creator-tab-card">
+        <form id="hero-card-form" class="sheet-form-grid" novalidate>
+          <label>Имя<input name="name" maxlength="80" required></label>
+          <label>Класс<select name="class_id" required></select></label>
+          <details class="creator-help wide-field">
+            <summary>О классе и его возможностях</summary><p id="hero-class-help" class="muted"></p>
+          </details>
+          <label>Общий перк<select name="general_feat" required></select></label>
+          <p id="hero-feat-help" class="muted wide-field"></p>
+          <label class="wide-field">Образ и внешность<textarea name="description" maxlength="1000" rows="3"></textarea></label>
+          <label class="wide-field">Принципы: чему следует герой<textarea name="edicts" maxlength="1000" rows="2"></textarea></label>
+          <label class="wide-field">Табу: чего герой избегает<textarea name="anathema" maxlength="1000" rows="2"></textarea></label>
+          <p id="hero-card-help" class="muted wide-field"></p>
+        </form>
+        <p id="hero-card-status" role="status"></p>
+        <details id="hero-preview-panel" class="creator-preview" hidden>
+          <summary>Параметры и снаряжение</summary>
+          <section id="hero-card-preview" aria-label="Параметры нового героя" aria-live="polite"></section>
+        </details>
+        <div class="dialog-actions creator-actions">
+          <button type="submit" form="hero-card-form" id="hero-card-apply" class="button-secondary">Проверить</button>
+          <button type="button" id="hero-card-save" class="button-secondary">Сохранить героя</button>
+        </div>
+      </div>
+      <div id="creator-chat-pane" class="creator-pane" role="tabpanel" aria-labelledby="creator-tab-chat">
+        <div id="hero-creation-chat" class="chats game-chat"></div>
+      </div>
+    </div>
+  </dialog>
 </body>
 </html>

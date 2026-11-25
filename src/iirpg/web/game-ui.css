@@ -1,0 +1,223 @@
+/* Player-facing layout. Administrative tools retain their own layout. */
+body[data-view="game"] { --control-bg: #1b231e; }
+body.creator-open { overflow: hidden; }
+body[data-view="game"] .send-button { min-width: 44px; width: 44px; min-height: 44px; }
+body[data-view="game"] .button-secondary { min-height: 44px; font-size: 13px; }
+body[data-view="game"] .inventory button { min-height: 44px; font-size: 13px; }
+body[data-view="game"] .reply-choice { min-height: 44px; font-size: 14px; }
+
+body[data-view="game"] .mobile-only { display: none; }
+body[data-view="game"] :is(button, input, select, textarea) { font: inherit; }
+body[data-view="game"] :is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--green); outline-offset: 2px;
+}
+body[data-view="game"] .intro { padding-block: 28px 24px; align-items: center; }
+body[data-view="game"] .intro h1 { font-size: clamp(26px, 3vw, 36px); }
+body[data-view="game"] .intro .eyebrow { margin-bottom: 9px; }
+body[data-view="game"] .section-heading {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+}
+body[data-view="game"] :is(#games-menu, #evening-adventure) {
+  background: #171d19; overflow-wrap: anywhere;
+}
+body[data-view="game"] :is(#games-menu, #evening-adventure, #hero-creator) button {
+  min-height: 44px; padding: 10px 14px; border: 1px solid #45533f;
+  border-radius: 9px; background: var(--control-bg); color: #e3ebdf;
+  font-size: 14px; line-height: 1.4;
+}
+body[data-view="game"] :is(#games-menu, #evening-adventure, #hero-creator) button:hover:not(:disabled) {
+  background: #2b3828;
+}
+body[data-view="game"] :is(#games-menu, #hero-creator) :is(input, select, textarea) {
+  width: 100%; min-width: 0; max-width: 100%; min-height: 44px;
+  border: 1px solid #42513f; border-radius: 8px; background: #111813;
+  color: #e9eee9; padding: 10px 12px; font-size: 16px;
+}
+body[data-view="game"] :is(#games-menu, #hero-creator) label {
+  min-width: 0; display: flex; flex-direction: column; gap: 7px;
+  font-size: 13px; color: #b2bfb4;
+}
+#games-menu h2 { font-size: 24px; margin: 0 0 16px; }
+#games-menu h3 { font-size: 18px; }
+#game-create {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end;
+  gap: 16px; margin: 12px 0;
+}
+#game-create-button, #hero-card-save, #evening-start {
+  background: #bbd99a !important; color: #172315 !important; border-color: #bbd99a !important;
+  font-weight: 650;
+}
+#game-create #extra-players { grid-column: 1 / -1; }
+#hero-choice-summary { padding: 4px 0 12px; }
+#hero-choice-summary p { margin-block: 6px; }
+#hero-choice-summary summary { min-height: 44px; padding: 12px 0; cursor: pointer; color: var(--green); }
+#hero-library { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.hero-library-card { margin: 0; background: #1a231b; min-width: 0; }
+.hero-library-card strong { font-size: 17px; }
+#hero-drafts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+#hero-drafts button { margin: 0; max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+.menu-details { border: 1px solid var(--line); border-radius: 10px; padding: 0 16px; margin-block: 16px; }
+.menu-details > summary { padding: 15px 0; min-height: 48px; color: var(--green); cursor: pointer; }
+.menu-details[open] { padding-bottom: 16px; }
+#participants-panel { padding: 0 16px; margin: 16px 0; }
+#participants-panel[open] { padding-bottom: 16px; }
+#invite-player { display: grid; gap: 12px; margin-top: 14px; }
+#games-list .saved-game { padding: 14px; border: 1px solid var(--line); border-radius: 10px; margin: 12px 0; }
+#games-list .saved-game strong { display: block; font-size: 16px; }
+#evening-adventure { border: 1px solid #40513c; border-radius: 12px; padding: 18px; margin-bottom: 18px; }
+#evening-adventure h2 { font-size: 20px; margin: 0 0 10px; }
+#evening-adventure p { line-height: 1.6; }
+#evening-progress { color: var(--green); font-size: 13px; }
+
+/* The creator is a separate workspace, not a long section beneath the hero list. */
+#hero-creator {
+  width: min(1120px, calc(100% - 32px)); height: min(900px, calc(min(var(--viewport-height, 100dvh), 100dvh) - 32px));
+  max-width: none; max-height: none; margin: auto; padding: 22px;
+  border: 1px solid #53634a; border-radius: 16px; background: #171e19; color: #e9eee9;
+  overflow: hidden; overflow-wrap: anywhere;
+}
+#hero-creator[open] { display: flex; flex-direction: column; }
+#hero-creator::backdrop { background: #050a07d9; }
+.creator-header { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex: 0 0 auto; }
+.creator-header > div { min-width: 0; }
+.creator-header .eyebrow { display: block; margin-bottom: 5px; }
+.creator-header h2 { margin: 0; font-size: 25px; line-height: 1.25; }
+.creator-header button { flex-shrink: 0; }
+.creator-intro { flex-shrink: 0; margin: 12px 0 18px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.hero-creation-layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 24px; min-height: 0; flex: 1 1 auto;
+}
+.creator-pane { min-width: 0; min-height: 0; }
+#creator-card-pane { overflow: auto; overscroll-behavior: contain; padding-right: 8px; scrollbar-width: thin; }
+.creator-tabs { display: none; }
+#hero-card-form { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+#hero-card-form .wide-field { grid-column: 1 / -1; }
+#hero-card-form textarea { min-height: 72px; line-height: 1.5; }
+.creator-help { font-size: 13px; color: var(--muted); }
+.creator-help summary { cursor: pointer; padding: 10px 0; color: var(--green); }
+#hero-card-form .creator-help p { margin-top: 8px; }
+#hero-card-status { font-size: 13px; line-height: 1.5; margin: 14px 0; overflow-wrap: anywhere; }
+.creator-preview { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.creator-preview > summary { padding: 14px; font-size: 14px; cursor: pointer; color: var(--green); }
+#hero-card-preview { margin: 0; padding: 0 14px 14px; border: 0; background: transparent; }
+#hero-card-preview h4 { margin: 8px 0; font-size: 18px; }
+#hero-card-preview p { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.hero-card-statistics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.hero-card-statistics > div { border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-width: 0; }
+.hero-card-statistics dt { font-size: 11px; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
+.hero-card-statistics dd { font-size: 20px; margin-top: 5px; color: var(--green); }
+#hero-creator .creator-actions {
+  position: sticky; bottom: 0; z-index: 1; margin: 16px 0 0; padding: 12px 0 2px;
+  border-top: 1px solid var(--line); background: #171e19; display: flex; gap: 8px;
+}
+#hero-creator .creator-actions button { flex: 1; min-width: 0; white-space: normal; }
+#hero-creation-chat { display: flex; width: 100%; height: 100%; max-width: none; margin: 0; }
+#hero-creation-chat .chat { flex: 1; min-height: 0; }
+#hero-creation-chat .chat-header { height: auto; min-height: 74px; padding: 14px; flex-shrink: 0; }
+#hero-creation-chat .chat-subtitle { line-height: 1.45; }
+#hero-creation-chat .avatar { flex-shrink: 0; }
+#hero-creation-chat .message-list { flex: 1 1 0; height: auto; min-height: 0; padding: 16px; }
+#hero-creation-chat .composer { flex: 0 0 auto; padding: 12px; }
+#hero-creation-chat .character-preview { padding: 12px; }
+#hero-creation-chat .character-preview h4 { font-size: 16px; }
+#hero-creation-chat .character-preview p { font-size: 13px; margin-block: 8px; }
+
+@media (max-width: 1000px) {
+  #game-create { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #hero-library { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 850px) {
+  #hero-creator { padding: 16px; }
+  .hero-creation-layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .creator-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex-shrink: 0; margin-bottom: 14px; }
+  #hero-creator .creator-tabs button { color: var(--muted); }
+  #hero-creator .creator-tabs button[aria-selected="true"] { background: #30402a; border-color: #77935f; color: var(--green); }
+  #creator-card-pane { padding-right: 2px; }
+  .creator-intro { margin-bottom: 12px; }
+}
+@media (max-width: 680px) {
+  body[data-view="game"] { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  body[data-view="game"] .workspace { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  body[data-view="game"] .workspace > .topbar { display: flex; min-height: 64px; height: 64px; padding-block: 10px; gap: 10px; }
+  body[data-view="game"] .topbar .page-nav { display: none; }
+  body[data-view="game"] .topbar .connection { margin-left: auto; }
+  body[data-view="game"] .intro { padding-block: 20px 18px; }
+  body[data-view="game"] .intro h1 { font-size: 27px; }
+  body[data-view="game"] .intro .eyebrow { display: none; }
+  body[data-view="game"] .intro p { font-size: 13px; margin-top: 8px; }
+  body[data-view="game"] .room-actions { display: grid; grid-template-columns: 1fr 1fr; padding-top: 14px; }
+  body[data-view="game"] .room-actions button { min-height: 44px; font-size: 13px; }
+  body[data-view="game"] main > .workspace-tabs {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 5; margin: 0;
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    background: #151d17f5; border-top: 1px solid #45533f; border-bottom: 0;
+  }
+  body[data-view="game"] main > .workspace-tabs .mobile-only { display: block; }
+  body[data-view="game"] main > .workspace-tabs button { min-height: 44px; font-size: 13px; padding: 10px 6px; }
+  body[data-view="game"] #games-menu { padding: 16px; }
+  #games-menu .section-heading { align-items: stretch; flex-direction: column; gap: 0; }
+  #game-create, #hero-library { grid-template-columns: minmax(0, 1fr); }
+  #game-create button { width: 100%; }
+  #games-list .saved-game button { margin-right: 4px; white-space: normal; }
+  #participants-panel { padding-inline: 12px; }
+  #participants-panel button { max-width: 100%; white-space: normal; }
+  #evening-adventure { padding: 14px; }
+  #evening-adventure h2 { font-size: 18px; }
+  #evening-adventure button { width: 100%; margin-top: 8px; white-space: normal; }
+  body[data-view="game"] #chats .chat {
+    height: clamp(300px, calc(min(var(--viewport-height, 100dvh), 100dvh) - 200px), 720px);
+  }
+  body[data-view="game"] #chats .message-list { flex: 1 1 0; height: auto; min-height: 0; padding: 16px 12px; }
+  body[data-view="game"] #chats .chat-header { height: auto; min-height: 64px; padding: 12px; }
+  body[data-view="game"] #chats .composer { flex-shrink: 0; }
+  body[data-view="game"] .composer textarea { font-size: 16px; }
+  body[data-view="game"] .send-button { min-width: 44px; width: 44px; min-height: 44px; }
+  body[data-view="game"] .reply-choice { min-height: 44px; font-size: 14px; }
+  body[data-view="game"] .inventory { padding: 14px; }
+  body[data-view="game"] .inventory button { min-height: 44px; font-size: 13px; }
+  body[data-view="game"] .inventory :is(input, select, textarea) { min-height: 44px; font-size: 16px; }
+  body[data-view="game"] .inventory-actions, body[data-view="game"] .item-controls { width: 100%; }
+  body[data-view="game"] .item-controls select { flex: 1; min-width: 0; width: 100%; }
+  body[data-view="game"] .item-controls button { flex: 0 0 auto; }
+  body[data-view="game"] .sheet-attributes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body[data-view="game"] .inventory .sheet-dialog { width: calc(100% - 16px); max-height: calc(min(var(--viewport-height, 100dvh), 100dvh) - 16px); }
+  #hero-creator {
+    width: calc(100% - 16px); height: calc(min(var(--viewport-height, 100dvh), 100dvh) - 16px);
+    padding: 14px; border-radius: 12px;
+  }
+  .creator-header h2 { font-size: 21px; }
+  .creator-header .eyebrow { font-size: 9px; }
+  .creator-intro { font-size: 12px; margin-block: 10px; }
+  #hero-card-form { grid-template-columns: minmax(0, 1fr); }
+  #hero-card-form .wide-field { grid-column: 1 / -1; }
+  .hero-card-statistics > div { padding: 8px; }
+}
+
+@media (max-height: 560px) and (max-width: 850px) {
+  .creator-intro, .creator-header .eyebrow { display: none; }
+  .creator-header { margin-bottom: 10px; }
+  .creator-header h2 { font-size: 18px; }
+  #hero-creation-chat .chat-header { display: none; }
+  #hero-creation-chat .composer-meta { display: none; }
+  #hero-creation-chat .composer { padding: 10px; }
+}
+
+@media (max-width: 680px) {
+  body[data-view="game"] .message-text { font-size: 15px; }
+  body[data-view="game"] .message-label { font-size: 12px; }
+  body[data-view="game"] .inventory :is(.sheet-attribute .muted, .sheet-stat span, .sheet-value span, .sheet-footnote, .item-info .muted, .roster-card .muted, .inventory-stats span) { font-size: 12px; }
+}
+
+@media (max-width: 850px) {
+  #hero-creator {
+    padding-top: max(14px, env(safe-area-inset-top));
+    padding-right: max(14px, env(safe-area-inset-right));
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+    padding-left: max(14px, env(safe-area-inset-left));
+  }
+}
+@media (max-width: 680px) {
+  body[data-view="game"] { padding-top: env(safe-area-inset-top); }
+}

@@ -49,6 +49,7 @@ STATIC_FILES = {
     "/chat.js": ("chat.js", "text/javascript; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/styles.css": ("styles.css", "text/css; charset=utf-8"),
+    "/game-ui.css": ("game-ui.css", "text/css; charset=utf-8"),
     "/inventory.js": ("inventory.js", "text/javascript; charset=utf-8"),
     "/debug.js": ("debug.js", "text/javascript; charset=utf-8"),
     "/character-sheet.js": ("character-sheet.js", "text/javascript; charset=utf-8"),
