@@ -70,6 +70,8 @@ class GameSessions:
                 title=command.get('name','Новая игра')
                 if not isinstance(title,str) or not title.strip() or len(title)>100:raise ValueError('Название: от 1 до 100 символов.')
                 party = command.get('party')
+                if region and region.get('format')=='solo_evening' and party:
+                    raise ValueError('Это приключение рассчитано на одного героя.')
                 if party is not None:
                     if not isinstance(party,list) or not 2 <= len(party) <= SETTINGS['max_players'] or any(not isinstance(p,dict) or set(p)!={'name','hero_id'} or not isinstance(p['hero_id'],str) for p in party):
                         raise ValueError('Укажите игроков и шаблон героя для каждого в пределах лимита группы.')

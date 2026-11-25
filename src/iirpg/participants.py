@@ -58,6 +58,9 @@ class Participants:
             raise ValueError('Имя игрока: от 1 до 80 символов.')
         existing = c.execute('SELECT character_id FROM session_participants WHERE room_id=? ORDER BY rowid', (room,)).fetchall()
         if len(existing) >= SETTINGS['max_players']: raise ValueError('Достигнут настроенный лимит игроков.')
+        state = self.adventure._load(c,room)
+        if state.get('campaign',{}).get('format')=='solo_evening' and (existing or character_id!=state.get('character_id')):
+            raise ValueError('Это приключение рассчитано на одного героя.')
         roster = self.adventure.ai.combat.roster._load(c, room)
         if character_id:
             if any(row['character_id'] == character_id for row in existing): raise ValueError('Герой уже закреплён за игроком.')

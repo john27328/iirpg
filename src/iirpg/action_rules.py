@@ -115,6 +115,10 @@ def prepare(world: dict, actor: dict, step: dict, inventory_rules: dict | None =
     if rule in ('buy', 'sell', 'bargain'):
         from .trade import prepare_trade
         return prepare_trade(world, actor, step, inventory_rules)
+    if rule == 'report_adventure':
+        from .evening import check_report
+        check_report(world,actor['id'],key)
+        return prepared
     if rule == 'talk':
         if target['kind'] != 'npc' or target.get('status', 'standing') not in ('standing', 'surrendered'):
             raise ValueError('Этот персонаж сейчас не может отвечать.')
@@ -318,6 +322,9 @@ def apply(world: dict, action: dict, outcome: int | None = None) -> dict:
             if contents:result['text'] += ' Внутри: ' + ', '.join(contents) + '.'
         else:
             result['text'] = target.get('description', world['places'][location(world, actor)]['description'])
+    elif rule == 'report_adventure':
+        from .evening import finish
+        result['text']=finish(world,actor)
     elif rule == 'talk':
         result['text'] = 'Вы обращаетесь к ' + name + '.'
     elif rule == 'open':
@@ -416,6 +423,8 @@ def apply(world: dict, action: dict, outcome: int | None = None) -> dict:
     if lead:
         result['discoveries'] = [lead]
         result['text'] += ' Вы обнаружили: ' + lead['observation'] + ' След ведёт к «' + world['places'][lead['destination']]['name'] + '». ' + lead['question']
+    from .evening import refresh
+    refresh(world)
     for quest in world.get('quests', {}).values():
         if not quest.get('completed') and world['entities'][quest['item']].get('owner') == quest['owner']:
             quest['completed'] = True

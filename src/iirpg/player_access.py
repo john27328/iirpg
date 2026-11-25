@@ -24,7 +24,7 @@ class PlayerAccess:
         if method == 'GET' and route == 'combat/actions': return
         if method != 'POST': raise PermissionError('Это действие доступно владельцу сеанса.')
         command = body()
-        if route == 'session':
+        if route in ('session','session/adventure'):
             if command.get('character_id') != principal['character_id']:
                 raise PermissionError('Можно действовать только своим персонажем.')
             return
@@ -76,7 +76,7 @@ class PlayerAccess:
     @staticmethod
     def session_view(state: dict) -> dict:
         """Player clients receive public progress, not GM knowledge or frozen private effects."""
-        value = {key: state[key] for key in ('revision','location','location_id','place','places','character_id','party_ids','active_combat','hero_hps','history') if key in state}
+        value = {key: state[key] for key in ('revision','location','location_id','place','places','character_id','party_ids','active_combat','hero_hps','history','adventure') if key in state}
         if state.get('pending_check'):
             value['pending_check'] = {key:v for key,v in state['pending_check'].items()
                                       if key in ('skill','modifier','dc','offer_id','roll_request_id','character_id','actor_name','player_id','description','label')}

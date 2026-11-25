@@ -6,6 +6,7 @@ from .progression import describe
 from .party import members
 from .campaign import scoped_world
 from .campaign_leads import public_context
+from . import evening
 from .story_memory import dialogue
 
 PROMPT = '''Ты ведущий настольной RPG на русском языке. Ты играешь NPC и описываешь мир.
@@ -46,6 +47,12 @@ act = только явно заявленные действия, в поряд
 Вопрос «что здесь видно?» без изучения отдельной вещи — обычный question. Не выдумывай найденные улики в reply.
 investigation содержит найденные наблюдения с источниками и ещё не изученные объекты. Новое наблюдение появится только после look или открытия.
 Простое посещение места не означает, что вопрос расследован или кто-то признан виновным.
+Если есть adventure: это короткая сольная история. Два основных свидетельства, затем возвращение к заказчику.
+«Возвращаюсь и докладываю/завершаю расследование» = move(заказчик), report_adventure(заказчик).
+«Мы уже всё нашли?», «когда закончится?» — question, без report_adventure. Готовность не завершает историю сама.
+После status=completed не выдавай новые задания и не продолжай старый поиск. Новая история создаётся отдельным явным действием игрока.
+Не объявляй готовую развязку до report_adventure и не меняй скрытую причину по ходу разговора.
+В reply не называй report_adventure или другие служебные правила: объясняй действия обычными словами.
 Составную заявку включай целиком: move, force_open, take — разные шаги. Движок сам остановится на броске.
 Не добавляй приготовления и действия «на всякий случай». Разговор НЕ требует убирать оружие или щит.
 Явное «иду в X и делаю Y» = move(X), Y, без повторного разрешения. После move цель уже будет рядом.
@@ -175,8 +182,9 @@ def context(state: dict, actor: dict, text: str, reaction: bool = False) -> dict
             'history': recent, 'recollections': recalled, 'pending_check': pending,
             'prepared_aid': deepcopy(world.get('aid', {})),
             'trade': trade_view(world, actor),
+            **({'adventure':evening.public(state)} if evening.enabled(state) else {}),
             **({'investigation':public_context(state,text,actor['id'])} if state.get('campaign') else {}),
-            **({'campaign':{k:deepcopy(state['campaign'][k]) for k in ('name','premise','bounds','facts','episodes')}} if state.get('campaign') else {}),
+            **({'campaign':{**{k:deepcopy(state['campaign'][k]) for k in ('name','premise','bounds','facts')},'episodes':[{k:e[k] for k in ('title','status','outcome') if k in e} for e in state['campaign']['episodes'][-8:]]}} if state.get('campaign') else {}),
             'plan': {k: v for k, v in state.get('plan', {}).items() if k in ('status', 'reason', 'original_text', 'index')}, 'rule_catalog': {key: {k: v for k, v in spec.items() if k in ('summary', 'skill', 'seconds', 'required_fields')} for key, spec in RULES.items()},
             'phase': 'AFTER_ROLL' if reaction else 'PLAYER_TURN',
             'last_check_resolution': resolution,

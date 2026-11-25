@@ -20,6 +20,7 @@ let switching = false;
 let accessToken = "";
 let identity = {role:"owner"};
 let gmBusy=false;
+let eveningData=null,eveningBusy=false,eveningOperation=null;
 let diceCatalog = null;
 const accessGate = $("#access-gate");
 
@@ -301,7 +302,7 @@ class JsonStub {
   }
 }
 
-const context = () => ({room,generation,ready,role:identity.role,characterId:identity.character_id,playerId:identity.player_id,maxPlayers:identity.max_players,gmBusy});
+const context = () => ({room,generation,ready,role:identity.role,characterId:identity.character_id,playerId:identity.player_id,maxPlayers:identity.max_players,gmBusy:gmBusy||eveningBusy});
 if (isDebug) setupScene($("#scene"), request, context, createRequestId);
 const Chat = createChatClass({context,request,createRequestId,diceCatalog:()=>diceCatalog,refreshChats,setConnection,showBattle,roomFragment});
 const first = isDebug ? null : new Chat("first", "01", "Ваши действия и ответы ведущего");
@@ -348,6 +349,7 @@ async function poll(epoch) {
       const activity=await request(`/api/rooms/${room}/session/status`);
       if(epoch!==generation)return;
       gmBusy=activity.thinking;
+      renderEvening(activity.adventure||null);
       $('#group-status').hidden=!gmBusy||first.busy;
       $('#group-status').textContent=gmBusy?`Мастер отвечает${activity.actor_name?' персонажу '+activity.actor_name:''}. Следующее сообщение можно пока написать.`:'';
       chats.forEach(chat=>chat.update());
@@ -380,7 +382,7 @@ async function openRoom(fresh = false) {
   try {
     const fragment = readFragment();
     if (fragment.get("access")) setToken(fragment.get("access"));
-    gmBusy=false;
+    gmBusy=false;eveningData=null;renderEvening(null);
     identity=await request('/api/identity');
     document.body.dataset.role=identity.role;
     if(!isDebug){$('#player-identity').hidden=identity.role!=='player';$('#player-identity').textContent=identity.role==='player'?`${identity.player_name} · Ваш герой: ${identity.character_name}. Группа путешествует вместе.`:'';}
@@ -466,14 +468,17 @@ accessGate.addEventListener("submit", (event) => {
 openRoom();
 
 let gameOperation=null,gameBusy=false;
-function gameLocked(){return switching||gameBusy||inventory?.busy||heroes?.isBusy()||chats.some(c=>c.busy);}
+function gameLocked(){return switching||gameBusy||eveningBusy||inventory?.busy||heroes?.isBusy()||chats.some(c=>c.busy);}
 async function showGames(){
  if(isDebug)return;
  try{
   const data=await request('/api/games');
   if(identity.role!=='player'){await heroes.refresh();await multiplayer.refresh();}
   $('#game-save').disabled=!ready||gameLocked();
-  $('#game-scenario').replaceChildren(...(data.campaigns||[]).map(c=>new Option(c.name+' · кампания','campaign:'+c.id)),...data.scenarios.map(s=>new Option(s.name,s.id)));
+  const previousChoice=$('#game-scenario').value;
+  $('#game-scenario').replaceChildren(...(data.campaigns||[]).map(c=>new Option(c.name+(c.format==='solo_evening'?' · соло':' · кампания'),'campaign:'+c.id)),...data.scenarios.filter(s=>s.id!=='evening-hub').map(s=>new Option(s.name,s.id)));
+  if([...$('#game-scenario').options].some(o=>o.value===previousChoice))$('#game-scenario').value=previousChoice;
+  selectEveningFormat();
   $('#games-list').replaceChildren(...data.games.map(game=>{
    const row=document.createElement('article');row.className='saved-game';
    const title=document.createElement('strong');title.textContent=game.name+(game.room_id===room?' · текущая':'');
@@ -513,3 +518,42 @@ async function runGame(command){
 $('#games-toggle')?.addEventListener('click',()=>{$('#games-menu').hidden=!$('#games-menu').hidden;if(!$('#games-menu').hidden){$('#combat-frame').contentWindow?.postMessage({type:'pause-for-game-menu'},location.origin);showGames();}});
 $('#game-save')?.addEventListener('click',()=>{if(ready)runGame({action:'save',room_id:room});});
 $('#game-create')?.addEventListener('submit',e=>{e.preventDefault();runGame({action:'create',name:$('#game-name').value,...($('#game-scenario').value.startsWith('campaign:')?{campaign:$('#game-scenario').value.slice(9)}:{scenario:$('#game-scenario').value}),hero_id:$('#game-hero').value,...(multiplayer.party()?{party:multiplayer.party()}:{})});});
+
+
+function selectEveningFormat(){
+ const solo=$('#game-scenario')?.value==='campaign:solo-evening';
+ const count=$('#game-player-count');if(!count)return;
+ if(solo)count.value='1';count.disabled=solo;multiplayer?.creationRows();
+}
+$('#game-scenario')?.addEventListener('change',selectEveningFormat);
+function renderEvening(data){
+ const panel=$('#evening-adventure');if(!panel)return;
+ eveningData=data;panel.hidden=!data;if(!data)return;
+ if(eveningOperation&&((eveningOperation.command.action==='start'&&data.id&&data.id!==eveningOperation.previousId)||
+    (eveningOperation.command.action!=='start'&&data.status==='completed')))eveningOperation=null;
+ $('#evening-title').textContent=data.title;
+ $('#evening-goal').textContent=data.goal||'Короткое расследование для одного героя. Герой и мир сохраняются после финала.';
+ $('#evening-progress').textContent=data.status==='completed'?'История завершена':data.status==='ready'?'Оба свидетельства найдены. Можно возвращаться к заказчику.':data.status==='not_started'?'История ещё не создана':`Свидетельства: ${data.found} из ${data.required}`;
+ $('#evening-summary').textContent=data.summary||'';
+ $('#evening-start').hidden=!['not_started','completed'].includes(data.status);
+ $('#evening-start').textContent=data.status==='completed'?'Сгенерировать новое приключение':'Сгенерировать историю';
+ $('#evening-finish').hidden=data.status!=='ready';
+ $('#evening-abandon').hidden=!['active','ready'].includes(data.status);
+ for(const id of ['evening-start','evening-finish','evening-abandon'])$('#'+id).disabled=eveningBusy||gmBusy||gameLocked()||data.pending;
+}
+async function controlEvening(action){
+ if(!eveningData||eveningBusy||gmBusy||gameLocked())return;
+ const command={action,revision:eveningData.revision,character_id:identity.character_id||eveningData.hero_id};
+ if(!eveningOperation||eveningOperation.command.action!==action||eveningOperation.room!==room){
+   eveningOperation={room,command,id:createRequestId(),previousId:eveningData.id};
+ }
+ const operation=eveningOperation;eveningBusy=true;$('#evening-error').textContent='';renderEvening(eveningData);
+ try{
+   const result=await request(`/api/rooms/${room}/session/adventure`,{method:'POST',body:JSON.stringify(operation.command),headers:{'Idempotency-Key':operation.id},timeoutMs:180000});
+   eveningOperation=null;renderEvening(result.adventure);
+ }catch(error){if(error.status)eveningOperation=null;$('#evening-error').textContent=error.message;}
+ finally{eveningBusy=false;renderEvening(eveningData);chats.forEach(c=>c.update());}
+}
+$('#evening-start')?.addEventListener('click',()=>controlEvening('start'));
+$('#evening-finish')?.addEventListener('click',()=>controlEvening('finish'));
+$('#evening-abandon')?.addEventListener('click',()=>controlEvening('abandon'));

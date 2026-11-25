@@ -222,6 +222,9 @@ class ChatHandler(BaseHTTPRequestHandler):
         if method == 'POST' and reaction_match:
             self._json(200, self.server.adventure.react(reaction_match.group(1), self._body().get('offer_id','')))
             return
+        adventure_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/session/adventure',route.path)
+        if method=='POST' and adventure_match:
+            self._json(200,self.server.adventure.adventure_control(adventure_match[1],self._body(),self.headers.get('Idempotency-Key','')));return
         session_match = re.fullmatch(r'/api/rooms/([0-9a-f-]{36})/session', route.path)
         if session_match:
             if method == 'GET':

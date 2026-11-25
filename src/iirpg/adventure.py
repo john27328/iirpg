@@ -15,7 +15,7 @@ from .progression import rest
 from .magic import utility
 from .maps import install_map
 from .story_memory import MAX_STORY_ENTRIES, fit_context
-from . import story_narration, campaign, campaign_storage
+from . import story_narration, campaign, campaign_storage, evening
 from .ai import session_reasoning
 from .party import members, acting_character
 from .roster import InventoryRules
@@ -106,6 +106,15 @@ class AdventureStore:
 
     def save(self, c, room, state):
         compatibility_view(state)
+        evening.refresh(state['world'])
+        active=state['world'].get('adventure') if evening.enabled(state) else None
+        if active:
+            episode=next(e for e in state['campaign']['episodes'] if e['id']==active['id'])
+            episode['status']=active['status']
+            if active['status']=='completed':
+                episode.update(outcome=active['outcome'],summary=active['summary'])
+                if 'result_ref' not in episode:
+                    episode['result_ref']=campaign_storage.put(c,'evening_result',{'adventure':active,'evidence':evening.found(state['world'])})
         campaign_storage.archive(c, state)
         c.execute('INSERT INTO adventures VALUES(?,?) ON CONFLICT(room_id) DO UPDATE SET body=excluded.body',
                   (room, json.dumps(campaign_storage.pack(c, state), ensure_ascii=False)))
@@ -115,7 +124,7 @@ class AdventureStore:
 
     def view(self, state):
         compatibility_view(state)
-        return {**deepcopy(state), 'location_id': state['location'],
+        return {**deepcopy(state), **({'adventure':evening.public(state)} if evening.enabled(state) else {}), 'location_id': state['location'],
                 'place': deepcopy(state['world']['places'][state['location']]),
                 'places': {k: v['name'] for k, v in state['world']['places'].items()}}
 
@@ -134,14 +143,17 @@ class AdventureStore:
         """Public activity indicator without exposing prompts or provider traces."""
         with self.store._connection() as c:
             self.store._require_room(c,room)
+            saved=c.execute('SELECT body FROM adventures WHERE room_id=?',(room,)).fetchone()
+            public=evening.public(json.loads(saved[0])) if saved else None
+            extra={'adventure':public} if public else {}
             rows=c.execute('SELECT command,body FROM ai_requests WHERE room_id=? AND started>? ORDER BY started',(room,time.time()-120)).fetchall()
             for row in rows:
                 trace=json.loads(row['body'])
                 if trace.get('status') not in ('running','chosen'):continue
                 actor_id=json.loads(row['command']).get('character_id')
                 actor=c.execute('SELECT body FROM characters WHERE room_id=? AND id=?',(room,actor_id)).fetchone() if actor_id else None
-                return {'thinking':True,'character_id':actor_id,'actor_name':json.loads(actor[0])['name'] if actor else None}
-        return {'thinking':False}
+                return {'thinking':True,'character_id':actor_id,'actor_name':json.loads(actor[0])['name'] if actor else None,**extra}
+        return {'thinking':False,**extra}
 
     def actor(self, c, room, identity):
         roster = self.ai.combat.roster._load(c, room)
@@ -494,6 +506,7 @@ class AdventureStore:
             return None
         if entry['action'] == 'question' and entry.get('voice') == 'gm':
             return None
+        if any(e.get('rule')=='report_adventure' for e in entry.get('events',[])):return None
         for event in entry.get('events', []):
             target = state['world']['entities'].get(event.get('target'), {})
             if event.get('rule') == 'aid' and target.get('kind') == 'pc':
@@ -573,7 +586,95 @@ class AdventureStore:
                           (json.dumps(trace, ensure_ascii=False), room, trace['request_id']))
         return result
 
+    def adventure_control(self, room: str, command: dict, key: str) -> dict:
+        try:UUID(key)
+        except (ValueError,TypeError,AttributeError):raise ValueError('Нужен UUID операции.') from None
+        if set(command)!={'action','revision','character_id'} or type(command['revision']) is not int or command['action'] not in ('start','finish','abandon'):
+            raise ValueError('Нужны действие start/finish/abandon, revision и character_id.')
+        encoded=json.dumps(command,sort_keys=True)
+        with self.store._connection() as c:
+            c.execute('BEGIN IMMEDIATE');state=self._load(c,room)
+            self.sync_inventory(c,room,state);self.sync_combat(c,room,state);self.resolve_pending(c,room,state)
+            prior=c.execute('SELECT command,body FROM adventure_requests WHERE room_id=? AND request_id=?',(room,key)).fetchone()
+            if prior:
+                if prior[0]!=encoded:raise MessageConflict('UUID уже использован.')
+                body=json.loads(prior[1])
+                if body['status']=='done':return campaign_storage.thaw_result(c,body['result'])
+                raise ValueError('Этот запрос уже отправлен. Для новой попытки нужен новый запрос.')
+            if not evening.enabled(state) or len(members(state))!=1:raise ValueError('Этот режим рассчитан на одного героя и одно короткое приключение.')
+            if state['revision']!=command['revision']:raise MessageConflict('История изменилась. Обновите страницу.')
+            actor,_=self.actor(c,room,command['character_id'])
+            if actor['id']!=state['character_id']:raise PermissionError('Выберите героя этого сольного приключения.')
+            if state.get('pending_check') or state.get('active_combat'):raise ValueError('Сначала завершите или отмените текущую проверку либо бой.')
+            if any(json.loads(r[0]).get('status') in ('running','chosen') for r in c.execute('SELECT body FROM ai_requests WHERE started>?',(time.time()-120,))):
+                raise MessageConflict('Дождитесь ответа мастера.')
+            active=state['world'].get('adventure')
+            if command['action']=='start':
+                if active and active['status']!='completed':raise ValueError('Сначала завершите текущую историю; новая не заменит её автоматически.')
+                if actor['sheet']['values']['hp_current']<=0:raise ValueError('Герой выбыл. Восстановите его перед новой историей.')
+                if not self.ai.client.ready():raise ValueError('Ключ бесплатного ИИ не настроен.')
+                c.execute('INSERT INTO adventure_requests VALUES(?,?,?,?)',(room,key,encoded,json.dumps({'status':'running'})))
+            else:
+                if not active or active['status']=='completed':raise ValueError('Нет текущей незавершённой истории.')
+                if command['action']=='finish':
+                    if len(evening.found(state['world']))!=2:raise ValueError('Пока найдены не оба свидетельства. Можно продолжить поиск или завершить без решения.')
+                    if state['location']!=active['home']:
+                        apply(state['world'],prepare(state['world'],actor,{'rule':'move','target':active['home']}))
+                        state['location']=active['home']
+                    event=apply(state['world'],prepare(state['world'],actor,{'rule':'report_adventure','target':active['patron_id']}))
+                    text=event['text']
+                else:
+                    state['world']['time']+=2;text=evening.finish(state['world'],actor['id'],abandon=True)
+                state['revision']+=1
+                state['history']=(state['history']+[{'player':'Завершаю расследование.' if command['action']=='finish' else 'Отказываюсь от дальнейшего расследования.',
+                    'gm':text,'action':'adventure_end','character_id':actor['id'],'actor_name':actor['name'],'player_request_id':key,'chat_index':state['revision']}])[-MAX_STORY_ENTRIES:]
+                self.save(c,room,state);self.publish(c,room,state);result=self.view(state)
+                c.execute('INSERT INTO adventure_requests VALUES(?,?,?,?)',(room,key,encoded,json.dumps({'status':'done','result':campaign_storage.freeze_result(c,result)},ensure_ascii=False)))
+                return result
+        request=evening.payload(state,self.ai.config)
+        try:
+            for attempt in range(2):
+                trace_key=str(uuid5(UUID(key),'evening.outline:'+str(attempt)));now=time.time()
+                trace={'status':'running','role':'adventure_outline','started':now,'request':deepcopy(request),'parent_request_id':key}
+                with self.store._connection() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    if self._load(c,room)['revision']!=state['revision']:raise MessageConflict('Мир изменился во время подготовки истории.')
+                    used=c.execute("SELECT (SELECT COUNT(*) FROM ai_requests WHERE date(started,'unixepoch')=date(?,'unixepoch'))+COALESCE((SELECT count FROM ai_deleted_usage WHERE day=date(?,'unixepoch')),0)",(now,now)).fetchone()[0]
+                    if used>=self.ai.config['daily_request_limit']:raise ValueError('Достигнут дневной лимит ИИ.')
+                    c.execute('INSERT INTO ai_requests VALUES(?,?,?,?,?)',(room,trace_key,json.dumps(command),now,json.dumps(trace,ensure_ascii=False)))
+                response=None;repair=None;started=time.monotonic()
+                try:
+                    response=self.ai.client.complete(request,self.ai.config['timeout_seconds']);trace['response']=response
+                    plan=evening.validate(json.loads(response['content']),state['world']);trace['status']='completed'
+                except (ValueError,TypeError,KeyError) as error:
+                    trace.update(status='failed',error=str(error))
+                    if response is not None and attempt==0:repair=str(error)
+                    else:raise ValueError('Не удалось подготовить историю: '+str(error)) from None
+                finally:
+                    trace['duration_ms']=round((time.monotonic()-started)*1000)
+                    with self.store._connection() as c:c.execute('UPDATE ai_requests SET body=? WHERE room_id=? AND request_id=?',(json.dumps(trace,ensure_ascii=False),room,trace_key))
+                if repair is None:break
+                request['messages'].extend([{'role':'assistant','content':response.get('content','')},{'role':'user','content':'План отклонён: '+repair+' Исправь и верни весь JSON. Мир ещё не изменён.'}])
+            with self.store._connection() as c:
+                c.execute('BEGIN IMMEDIATE');current=self._load(c,room)
+                if current['revision']!=state['revision']:raise MessageConflict('История изменилась; новый план не применён.')
+                self.sync_inventory(c,room,current);evening.validate(plan,current['world'])
+                identity='evening_'+uuid5(UUID(key),'episode').hex[:12]
+                text=evening.start(current,plan,identity)
+                current['world']['adventure']['outline_ref']=campaign_storage.put(c,'evening_outline',plan)
+                current['revision']+=1
+                current['history']=(current['history']+[{'player':'Начинаю новое приключение на один вечер.','gm':text,'action':'adventure_start',
+                    'character_id':actor['id'],'actor_name':actor['name'],'player_request_id':key,'chat_index':current['revision']}])[-MAX_STORY_ENTRIES:]
+                self.save(c,room,current);self.publish(c,room,current);result=self.view(current)
+                c.execute('UPDATE adventure_requests SET body=? WHERE room_id=? AND request_id=?',(json.dumps({'status':'done','result':campaign_storage.freeze_result(c,result)},ensure_ascii=False),room,key))
+                return result
+        except (ValueError,KeyError,TypeError) as error:
+            with self.store._connection() as c:c.execute('UPDATE adventure_requests SET body=? WHERE room_id=? AND request_id=?',(json.dumps({'status':'failed','error':str(error)},ensure_ascii=False),room,key))
+            raise
+
     def materialize_campaign(self, room: str, key: str, state: dict, proposal: dict, text: str, actor_id: str) -> tuple[dict, dict, list[tuple[str, dict]]]:
+        if evening.enabled(state) and (not state['world'].get('adventure') or state['world']['adventure']['status']=='completed'):
+            return state,proposal,[]
         if not state.get('campaign') or state.get('pending_check'):
             return state, proposal, []
         trial, proposal, needed = campaign.creation_plan(state, proposal)
@@ -660,7 +761,7 @@ class AdventureStore:
             if reaction:
                 prompt_context = {k: v for k, v in prompt_context.items() if k in (
                     'hero', 'hero_id', 'shared_party', 'conversation_partner', 'gm_knowledge', 'observations',
-                    'history', 'recollections', 'pending_check', 'location_id', 'phase', 'confirmed_results', 'last_check_resolution', 'trade', 'investigation', 'player')}
+                    'history', 'recollections', 'pending_check', 'location_id', 'phase', 'confirmed_results', 'last_check_resolution', 'trade', 'investigation', 'adventure', 'player')}
                 prompt_context = fit_context(story_narration.narrative_scope(prompt_context, state['world']), budget)
             payload = {'model': self.ai.config.get('session_model', self.ai.config['model']), 'messages': [{'role': 'system', 'content': story_narration.prompt_for(prompt_context, reaction=True) if reaction else PLANNER_PROMPT}, {'role': 'user', 'content': json.dumps(prompt_context, ensure_ascii=False)}],
                        'max_tokens': 4096 if self.ai.config.get('session_reasoning') else 1800, 'temperature': 0.2,
@@ -712,7 +813,9 @@ class AdventureStore:
                         if pending: entry['cancelled_offer_id'] = pending['offer_id']
                         entry['gm'] = self.cancel_pending(c, room, state, announce=False)
                 elif proposal['intent'] == 'act':
-                    if state.get('pending_check'):
+                    if evening.enabled(state) and (not state['world'].get('adventure') or state['world']['adventure']['status']=='completed'):
+                        entry['gm']='Эта история завершена. Можно начать новое приключение.' if state['world'].get('adventure') else 'Начните приключение кнопкой «Сгенерировать историю».'
+                    elif state.get('pending_check'):
                         entry['gm'] = 'Есть ожидающая проверка. Можно уточнить её, бросить кости или отменить попытку.'
                     elif not proposal['steps']:
                         entry['gm'] = 'Уточните цель и способ действия.'
