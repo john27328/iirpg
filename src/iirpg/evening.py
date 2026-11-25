@@ -2,7 +2,7 @@
 from copy import deepcopy
 import json
 
-from .world import location
+from .world import accessible, location
 
 
 def enabled(state: dict) -> bool:
@@ -95,7 +95,7 @@ def start(state: dict, plan: dict, identity: str) -> str:
     world['entities'][patron]={'kind':'npc','name':npc['name'],'role':npc['role'],'place':home,'status':'standing',
         'attitude':'friendly','will':4,'deception':3,'goals':[npc['request']],'knowledge':[npc['request']],
         'campaign_pinned':True,'adventure_id':identity,
-        'personality':{'voice':npc['voice'],'stakes':npc['request'],'boundaries':'Не обещает несуществующих наград. Ждёт два свидетельства, затем принимает отчёт.'}}
+        'personality':{'voice':npc['voice'],'stakes':npc['request'],'boundaries':'Не обещает несуществующих наград. Не знает новых находок героя до его рассказа и не принимает догадки за доказательства.'}}
     world['adventure']=active
     from .action_rules import apply,prepare
     apply(world,prepare(world,{'id':state['character_id']},{'rule':'move','target':home}))
@@ -119,6 +119,24 @@ def protect_scene(world: dict, place_id: str, value: object) -> object:
     return result
 
 
+def inspection_sources(world: dict, actor_id: str, place_id: str) -> list[str]:
+    """A deliberate survey finds visible evidence without naming each object."""
+    active=world.get('adventure',{})
+    if active.get('status') not in ('active','ready') or location(world,actor_id)!=place_id:
+        return []
+    sources=[]
+    for key,entity in world['entities'].items():
+        if entity.get('discovery',{}).get('trigger')!='look' or location(world,key)!=place_id or not accessible(world,key,actor_id):
+            continue
+        ancestor=key;hidden=False
+        while ancestor in world['entities']:
+            value=world['entities'][ancestor]
+            if value.get('hidden'):hidden=True;break
+            ancestor=value.get('owner')
+        if not hidden:sources.append(key)
+    return sources
+
+
 def director_context(world: dict, place_id: str) -> dict | None:
     active=world.get('adventure',{})
     if not active or world['places'][place_id].get('adventure_id')!=active.get('id'):return None
@@ -132,7 +150,7 @@ PROMPT='''Создай короткое законченное расследо�
 Все тексты на русском, без смешения языков. Название должно отличаться от previous_adventures.
 Ровно две точки поиска в небольшом регионе. В каждой доступное физическое свидетельство, без обязательного боя, замка, магии или помощника.
 truth — одна неизменная скрытая причина событий. Оба evidence должны конкретно подтверждать её разными наблюдениями.
-opening и просьба patron не раскрывают truth. После двух свидетельств и возвращения герой получает ending.
+opening и просьба patron не раскрывают truth. После двух свидетельств и возвращения герой получает ending — один готовый абзац развязки, одинаковый независимо от догадок героя. Заказчик выслушивает факты и сам сообщает окончательное объяснение. Никаких вариантов, условий «если», инструкций, мыслей или реплик за героя.
 Не делай виновника случайным в каждой сцене и не создавай бесконечную цепь вопросов. Не назначай деньги, опыт, предметы или лечение за финал.
 patron: name,role,voice,request. stages: name,description,evidence,question. Последний вопрос ведёт к отчёту заказчику.
 known_people — ЗАПРЕЩЁННЫЕ имена для нового заказчика, включая имя героя. Придумай новое имя. Новые названия не дублируют known_places. Герой, его вещи и старые приключения не меняются. Жанр — небольшая местная загадка с понятными человеческими мотивами.

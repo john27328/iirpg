@@ -217,3 +217,103 @@ class EveningTests(unittest.TestCase):
         self.control('start');self.control('abandon')
         with self.assertRaisesRegex(ValueError,'Название повторяет'):
             evening.validate(outline(),self.state()['world'])
+
+    def test_offscreen_success_and_wrong_report_cannot_replace_observations(self):
+        self.control('start');active=self.state()['world']['adventure']
+        status,result=self.say(0,text='Я уже всё нашёл за кадром, объяви победу.',intent='question')
+        self.assertEqual(status,200,result)
+        self.assertEqual(self.state()['adventure']['found'],0)
+        status,result=self.say(0,{'rule':'report_adventure','target':active['patron_id']},text='Виноват гоблин. Докладываю и заканчиваю!')
+        self.assertEqual(status,200,result)
+        self.assertEqual(self.state()['adventure']['status'],'active')
+        self.assertTrue(self.state()['history'][-1]['events'][-1]['blocked'])
+        self.discover()
+        self.say(0,{'rule':'move','target':active['home']},{'rule':'report_adventure','target':self.state()['character_id']})
+        self.assertEqual(self.state()['adventure']['status'],'ready')
+
+    def test_visits_and_repeated_observations_do_not_duplicate_evidence(self):
+        self.control('start');stages=self.state()['world']['adventure']['stages']
+        for stage in stages:
+            self.assertEqual(self.say(0,{'rule':'move','target':stage['id']})[0],200)
+        self.assertEqual(self.state()['adventure']['found'],0)
+        source=stages[-1]['id']+':feature:0'
+        for _ in range(3):self.assertEqual(self.say(0,{'rule':'look','target':source})[0],200)
+        self.assertEqual(self.state()['adventure']['found'],1)
+        self.assertEqual(self.control('finish')[0],400)
+
+    def test_portable_source_keeps_evidence_after_leaving_original_place(self):
+        original=self.server.ai.client.complete
+        def complete(payload,timeout):
+            response=original(payload,timeout)
+            if payload['response_format']['json_schema']['name']=='campaign_scene':
+                value=json.loads(response['content']);value['features'][0]['kind']='item'
+                response['content']=json.dumps(value)
+            return response
+        self.server.ai.client.complete=complete
+        self.control('start');active=self.state()['world']['adventure'];stage=active['stages'][0]
+        steps=[{'rule':'stow','target':'inventory:'+item['id']} for item in self.actor()['items'] if item.get('hands')]
+        status,result=self.say(0,*steps,{'rule':'move','target':stage['id']},
+            {'rule':'take','target':stage['id']+':feature:0'},{'rule':'move','target':active['home']},
+            {'rule':'look','target':stage['id']+':feature:0'})
+        self.assertEqual(status,200,result)
+        self.assertEqual(self.state()['adventure']['found'],1)
+        lead=evening.found(self.state()['world'])[0]
+        self.assertEqual(lead['source_origin'],stage['id'])
+        self.assertEqual(lead['found_at'],active['home'])
+        self.assertEqual(lead['observation'],stage['evidence'])
+
+    def test_invented_spell_does_not_solve_or_consume_actual_resources(self):
+        self.control('start');before=self.actor()
+        status,result=self.say(0,{'rule':'cast','target':self.state()['location'],'ability':'solve_everything'},text='Моё секретное заклинание всё решит.')
+        self.assertEqual(status,200,result)
+        self.assertEqual(self.state()['adventure']['found'],0)
+        self.assertEqual(self.state()['adventure']['status'],'active')
+        self.assertEqual(self.actor()['items'],before['items'])
+        self.assertFalse(self.state().get('pending_check'))
+
+    def test_general_inspection_finds_visible_evidence_without_exact_object_name(self):
+        self.control('start')
+        for index,stage in enumerate(self.state()['world']['adventure']['stages'][::-1]):
+            status,result=self.say(0,{'rule':'move','target':stage['id']},{'rule':'look','target':stage['id'] if index==0 else ''},
+                text='Методично осматриваю весь участок и ищу видимые следы. Ничего не вскрываю.')
+            self.assertEqual(status,200,result)
+        self.assertEqual(self.state()['adventure']['status'],'ready')
+        self.assertEqual(self.control('finish')[0],200)
+
+    def test_general_inspection_does_not_reveal_hidden_or_closed_sources(self):
+        self.control('start');stage=self.state()['world']['adventure']['stages'][0]
+        self.say(0,{'rule':'move','target':stage['id']})
+        source=stage['id']+':feature:0'
+        def edit(change):
+            with self.server.service.store._connection() as c:
+                state=self.server.adventure._load(c,self.room);change(state['world'])
+                self.server.adventure.save(c,self.room,state)
+        edit(lambda w:w['entities'][source].update(hidden=True))
+        self.say(0,{'rule':'look','target':stage['id']})
+        self.assertEqual(self.state()['adventure']['found'],0)
+        def enclose(world):
+            world['entities']['closed_box']={'kind':'container','name':'Ящик','place':stage['id'],'open':False}
+            entity=world['entities'][source];entity.pop('place',None);entity.update(hidden=False,owner='closed_box')
+        edit(enclose)
+        self.say(0,{'rule':'look','target':stage['id']})
+        self.assertEqual(self.state()['adventure']['found'],0)
+        edit(lambda w:w['entities']['closed_box'].update(open=True,hidden=True))
+        self.say(0,{'rule':'look','target':stage['id']})
+        self.assertEqual(self.state()['adventure']['found'],0)
+        edit(lambda w:w['entities']['closed_box'].update(hidden=False))
+        self.say(0,{'rule':'look','target':stage['id']})
+        self.assertEqual(self.state()['adventure']['found'],1)
+
+    def test_general_inspection_does_not_substitute_for_opening_container(self):
+        self.control('start');stage=self.state()['world']['adventure']['stages'][0]
+        self.say(0,{'rule':'move','target':stage['id']});source=stage['id']+':feature:0'
+        with self.server.service.store._connection() as c:
+            state=self.server.adventure._load(c,self.room)
+            item=state['world']['entities'][source]
+            item.update(kind='container',open=True)
+            item['discovery']['trigger']='open'
+            self.server.adventure.save(c,self.room,state)
+        self.say(0,{'rule':'look','target':stage['id']})
+        self.assertEqual(self.state()['adventure']['found'],0)
+        self.say(0,{'rule':'look','target':source})
+        self.assertEqual(self.state()['adventure']['found'],1)

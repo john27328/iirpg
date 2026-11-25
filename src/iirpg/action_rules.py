@@ -419,10 +419,15 @@ def apply(world: dict, action: dict, outcome: int | None = None) -> dict:
         result['text'] = name + (': необычный способ сработал.' if outcome >= 2 else ': попытка не удалась; можно попробовать другой подход.')
     from .campaign_leads import reveal, visit
     if rule == 'move':visit(world,action['destination'],actor)
-    lead = reveal(world,key,actor,rule)
-    if lead:
-        result['discoveries'] = [lead]
-        result['text'] += ' Вы обнаружили: ' + lead['observation'] + ' След ведёт к «' + world['places'][lead['destination']]['name'] + '». ' + lead['question']
+    sources=[key]
+    if rule=='look' and key in ('',location(world,actor)):
+        from .evening import inspection_sources
+        sources.extend(inspection_sources(world,actor,location(world,actor)))
+    for source_id in sources:
+        lead = reveal(world,source_id,actor,rule)
+        if lead:
+            result.setdefault('discoveries',[]).append(lead)
+            result['text'] += ' Вы обнаружили: ' + lead['observation'] + ' След ведёт к «' + world['places'][lead['destination']]['name'] + '». ' + lead['question']
     from .evening import refresh
     refresh(world)
     for quest in world.get('quests', {}).values():
