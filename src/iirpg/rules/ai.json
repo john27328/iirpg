@@ -6,6 +6,8 @@
   "context_max_bytes": 14000,
   "session_context_max_bytes": 48000,
   "session_narration": true,
+  "session_agent": true,
+  "session_agent_repairs": 2,
   "session_model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "session_reasoning": false,
   "npc": {

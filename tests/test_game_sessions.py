@@ -10,7 +10,9 @@ class GameSessionTests(unittest.TestCase):
     setUp=fixtures.GMIntentTests.setUp
     command=fixtures.GMIntentTests.command
     roster_command=fixtures.GMIntentTests.roster_command
-    def games(self):return GameSessions(AdventureStore(AIService(self.combat,self.scene,load_config(),__import__('story_fixtures').Client())))
+    def games(self):
+        config=load_config();config['session_agent']=False
+        return GameSessions(AdventureStore(AIService(self.combat,self.scene,config,__import__('story_fixtures').Client())))
     def act(self,games,action,**extra):return games.execute({'action':action,**extra},str(uuid4()))
     def test_create_save_restore_and_delete_are_isolated_and_idempotent(self):
         games=self.games();key=str(uuid4());command={'action':'create','name':'Проба','scenario':'missing-book'}

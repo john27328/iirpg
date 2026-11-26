@@ -27,6 +27,7 @@ class CampaignPersistenceTests(unittest.TestCase):
     def create(self, directory):
         (directory/'access-token').write_text('restart-action-plans-testing-token-123456789')
         server=ChatHTTPServer(('127.0.0.1',0),directory/'chat.sqlite3')
+        server.ai.config['session_agent']=False  # Agent review is tested separately.
         class Client:
             steps=[]
             def ready(self):return True

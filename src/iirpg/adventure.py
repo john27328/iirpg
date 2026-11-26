@@ -15,8 +15,9 @@ from .progression import rest
 from .magic import utility
 from .maps import install_map
 from .story_memory import MAX_STORY_ENTRIES, fit_context
-from . import story_narration, campaign, campaign_storage, evening
+from . import story_narration, campaign, campaign_storage, evening, world_growth
 from .ai import session_reasoning
+from .session_agent import SessionAgent, AgentRejected
 from .party import members, acting_character
 from .roster import InventoryRules
 
@@ -504,7 +505,7 @@ class AdventureStore:
         entry = state['history'][-1]
         if not self.ai.config.get('session_narration', False) or state.get('active_combat') or (entry['action'] != 'question' and not entry.get('events')):
             return None
-        if entry['action'] == 'question' and entry.get('voice') == 'gm':
+        if entry['action'] == 'question' and entry.get('voice') == 'gm' and not world_growth.enabled(state):
             return None
         if any(e.get('rule')=='report_adventure' for e in entry.get('events',[])):return None
         for event in entry.get('events', []):
@@ -540,11 +541,25 @@ class AdventureStore:
         return trace
 
     def narrate(self, room: str, trace: dict, result: dict) -> dict:
-        """Append prose without mutating effects; failures keep the committed result."""
+        """Commit validated local seeds with prose; failures keep prior action effects."""
         started = time.monotonic()
         try:
             response = self.ai.client.complete(trace['request'], self.ai.config['timeout_seconds'])
             trace['response'] = response
+            if self.ai.config.get('session_agent',False):
+                with self.store._connection() as c:snapshot=self._load(c,room)
+                if snapshot['revision'] != trace['revision']:
+                    trace.update(status='stale',error='Сцена изменилась; описание не опубликовано.')
+                    return result
+                def validate_narration(candidate):
+                    text=story_narration.reply(candidate)
+                    story_narration.validate_trade_amounts(text,json.loads(trace['request']['messages'][1]['content']))
+                    world_growth.validate_additions(snapshot,json.loads(candidate['content']).get('world_additions',[]),
+                                                   snapshot['history'][-1]['character_id'],trace['request_id'])
+                original_response=response
+                response=SessionAgent(self,room,trace['request_id'],trace['revision']).run('narration',trace['request'],response,validate_narration)
+                trace['verification_checked']=True
+                if response is not original_response:trace['accepted_content']=response['content']
             text = story_narration.reply(response)
             story_narration.validate_trade_amounts(text,json.loads(trace['request']['messages'][1]['content']))
             with self.store._connection() as c:
@@ -553,15 +568,21 @@ class AdventureStore:
                 if state['revision'] != trace['revision']:
                     trace.update(status='stale', error='Сцена изменилась; описание не опубликовано.')
                     return result
+                additions = world_growth.apply(state,json.loads(response['content']).get('world_additions',[]),
+                                               state['history'][-1]['character_id'],trace['request_id'])
+                for place_id, place in additions['places'].items():
+                    state['campaign']['scene_refs'][place_id] = campaign_storage.put(c,'scene',{'places':{place_id:place},'entities':{}})
+                for hook_id, hook in additions['hooks'].items():
+                    state['campaign'].setdefault('hook_refs',{})[hook_id] = campaign_storage.put(c,'story_hook',hook)
                 text = story_narration.render_references(text,state['world'])
                 source = state['history'][-1]
-                if text == source['gm'].strip():
+                if text == source['gm'].strip() and not any(additions.values()):
                     trace.update(status='completed', deduplicated=True)
                     return result
                 entry = {k: deepcopy(source[k]) for k in ('character_id', 'actor_name', 'player_id', 'player_name', 'place_id', 'listeners') if k in source}
                 entry.update(player='', gm=text, action='question' if source['action'] == 'question' else 'narration', player_request_id=trace['request_id'],
                              source_request_id=trace['parent_request_id'], chat_index=state['revision'] + 1)
-                entry['voice'] = 'npc' if source['action'] == 'question' else 'gm'
+                entry['voice'] = source.get('voice','npc') if source['action'] == 'question' else 'gm'
                 entry['place_id'] = state['location']
                 entry['listeners'] = [k for k, v in state['world']['entities'].items()
                                       if v['kind'] == 'npc' and location(state['world'], k) == state['location']]
@@ -581,6 +602,11 @@ class AdventureStore:
                 trace.update(status='completed')
         except (ValueError, KeyError, TypeError) as error:
             trace.update(status='failed', error=str(error))
+            if self.ai.config.get('session_agent',False):
+                if isinstance(error,AgentRejected):trace['verification_issues']=error.issues
+                with self.store._connection() as c:
+                    self.event(c,room,str(uuid5(UUID(trace['request_id']),'verification.error')),'second',
+                        'Не удалось согласовать описание с состоянием мира. Уже выполненные действия сохранены; можно продолжить или уточнить заявку.',{'ai_error':True})
         finally:
             trace['duration_ms'] = round((time.monotonic() - started) * 1000)
             with self.store._connection() as c:
@@ -634,8 +660,19 @@ class AdventureStore:
                 c.execute('INSERT INTO adventure_requests VALUES(?,?,?,?)',(room,key,encoded,json.dumps({'status':'done','result':campaign_storage.freeze_result(c,result)},ensure_ascii=False)))
                 return result
         request=evening.payload(state,self.ai.config)
+        def review_outline(candidate):
+            plan=evening.validate(candidate,state['world'])
+            trial=deepcopy(state)
+            identity='evening_'+uuid5(UUID(key),'episode').hex[:12]
+            evening.start(trial,plan,identity)
+            data={'heroes':[{'id':actor['id'],'name':actor['name']}],
+                  'new_patron':{'name':plan['patron']['name'],'role':plan['patron']['role']},
+                  'new_places':{key:{'name':place['name'],'description':place['description']}
+                                for key,place in trial['world']['places'].items() if place.get('adventure_id')==identity},
+                  'private_truth':plan['truth'],'bounds':state['campaign']['bounds']}
+            return data,{'opening':plan['opening'],'npc_request':plan['patron']['request']}
         try:
-            for attempt in range(2):
+            for attempt in range(1 if self.ai.config.get('session_agent') else 2):
                 trace_key=str(uuid5(UUID(key),'evening.outline:'+str(attempt)));now=time.time()
                 trace={'status':'running','role':'adventure_outline','started':now,'request':deepcopy(request),'parent_request_id':key}
                 with self.store._connection() as c:
@@ -647,10 +684,19 @@ class AdventureStore:
                 response=None;repair=None;started=time.monotonic()
                 try:
                     response=self.ai.client.complete(request,self.ai.config['timeout_seconds']);trace['response']=response
+                    if self.ai.config.get('session_agent'):
+                        original_response=response
+                        response=SessionAgent(self,room,trace_key,state['revision']).run('outline',request,response,
+                            lambda candidate:evening.validate(json.loads(candidate['content']),state['world']),
+                            review_projection=review_outline)
+                        trace['verification_checked']=True
+                        if response is not original_response:trace['accepted_content']=response['content']
                     plan=evening.validate(json.loads(response['content']),state['world']);trace['status']='completed'
                 except (ValueError,TypeError,KeyError) as error:
                     trace.update(status='failed',error=str(error))
-                    if response is not None and attempt==0:repair=str(error)
+                    if isinstance(error,AgentRejected):trace['verification_issues']=error.issues
+                    if isinstance(error,MessageConflict):raise
+                    if response is not None and attempt==0 and not self.ai.config.get('session_agent'):repair=str(error)
                     else:raise ValueError('Не удалось подготовить историю: '+str(error)) from None
                 finally:
                     trace['duration_ms']=round((time.monotonic()-started)*1000)
@@ -683,7 +729,7 @@ class AdventureStore:
         additions = []
         for place_id in needed:
             request = campaign.generation_payload(trial,place_id,text,self.ai.config)
-            for attempt in range(2):
+            for attempt in range(1 if self.ai.config.get('session_agent') else 2):
                 generation_key = str(uuid5(UUID(key),'campaign.scene:'+place_id+':'+str(attempt)))
                 now = time.time()
                 trace = {'request_id':generation_key,'parent_request_id':key,'role':'campaign_generation',
@@ -698,12 +744,20 @@ class AdventureStore:
                 try:
                     response = self.ai.client.complete(request,self.ai.config['timeout_seconds'])
                     trace['response'] = response
+                    if self.ai.config.get('session_agent'):
+                        original_response=response
+                        response=SessionAgent(self,room,generation_key,state['revision']).run('scene',request,response,
+                            lambda candidate:campaign.scene(trial['world'],place_id,json.loads(candidate['content']),require_discoveries=True))
+                        trace['verification_checked']=True
+                        if response is not original_response:trace['accepted_content']=response['content']
                     addition = campaign.scene(trial['world'],place_id,json.loads(response['content']),require_discoveries=True)
                     trial['world']['places'].update(addition['places']);trial['world']['entities'].update(addition['entities'])
                     additions.append((place_id,addition));trace['status'] = 'completed'
                 except (ValueError,KeyError,TypeError) as error:
                     trace.update(status='failed',error=str(error))
-                    if response is not None and attempt == 0:
+                    if isinstance(error,AgentRejected):trace['verification_issues']=error.issues
+                    if isinstance(error,MessageConflict):raise
+                    if response is not None and attempt == 0 and not self.ai.config.get('session_agent'):
                         repair = str(error)
                     else:
                         raise ValueError('Не удалось создать новое место: '+str(error)) from None
@@ -769,7 +823,7 @@ class AdventureStore:
                        'max_tokens': 4096 if self.ai.config.get('session_reasoning') else 1800, 'temperature': 0.2,
                        'reasoning': session_reasoning(self.ai.config),
                        'provider': {'max_price': {'prompt': 0, 'completion': 0}},
-                       'response_format': {'type': 'json_schema', 'json_schema': {'name': 'action_plan', 'strict': True, 'schema': schema(state, text)}}}
+                       'response_format': {'type': 'json_schema', 'json_schema': {'name': 'action_plan', 'strict': True, 'schema': schema(state, text,actor['id'])}}}
             trace = {'status': 'running', 'role': 'session_gm', 'started': now, 'request': payload}
             if not reaction: self.event(c, room, str(uuid5(UUID(key), 'session.player')), 'first', text, {'client_request_id': key,'character_id':actor['id'],'actor_name':actor['name'],'player_id':actor.get('player_id'),'player_name':next((p['name'] for p in roster['players'] if p['id']==actor.get('player_id')),None)})
             self.save(c, room, initial)
@@ -779,8 +833,14 @@ class AdventureStore:
         try:
             response = self.ai.client.complete(payload, self.ai.config['timeout_seconds']); trace['response'] = response
             trace['duration_ms'] = round((time.monotonic() - provider_started) * 1000)
+            if self.ai.config.get('session_agent',False):
+                original_response=response
+                response=SessionAgent(self,room,key,state['revision']).run('narration' if reaction else 'plan',payload,response,
+                                lambda candidate:validate_proposal(json.loads(candidate['content'])))
+                trace['verification_checked']=True
+                if response is not original_response:trace['accepted_content']=response['content']
             proposal = validate_proposal(json.loads(response['content']))
-            if not reaction and repeats_previous_reply(proposal, state['history'], text):
+            if not reaction and not self.ai.config.get('session_agent',False) and repeats_previous_reply(proposal, state['history'], text):
                 proposal = self.repair_repetition(room, key, payload, proposal)
                 trace['semantic_repair_checked'] = True
             if reaction and (proposal['intent'] != 'question' or proposal['steps']): raise ValueError('Реакция не должна назначать новое действие.')
@@ -814,6 +874,13 @@ class AdventureStore:
                 proposal['reply'] = story_narration.render_references(proposal['reply'],state['world'])
                 entry = {'place_id': state['location'], 'listeners': [k for k, v in state['world']['entities'].items() if v['kind'] == 'npc' and location(state['world'], k) == state['location']], 'player': '' if reaction else text, 'gm': proposal['reply'], 'action': 'reaction' if reaction else proposal['intent'], 'player_request_id': key,'character_id':actor['id'],'actor_name':actor['name'],'player_id':actor.get('player_id'),'player_name':next((p['name'] for p in roster['players'] if p['id']==actor.get('player_id')),None)}
                 entry['voice'] = proposal.get('voice', 'npc')
+                if proposal.get('world_request') and proposal['intent']=='question':entry['world_request']=True
+                if entry.get('world_request') and world_growth.enabled(state):
+                    entry['gm']='Вы расспрашиваете о новой зацепке поблизости.'
+                deferred_reply = (self.ai.config.get('session_agent') and self.ai.config.get('session_narration')
+                        and proposal['intent']=='question' and (entry['voice']=='npc' or world_growth.enabled(state)))
+                if deferred_reply:
+                    entry['gm']=''
                 if proposal['intent'] == 'cancel':
                     pending = state.get('pending_check')
                     if pending and pending.get('character_id', state['character_id']) != actor['id']:
@@ -835,7 +902,7 @@ class AdventureStore:
                         entry['gm'] = '\n'.join(e['text'] for e in events)
                         entry['events'] = events
                         if state.get('active_combat'): entry['combat_id'] = state['active_combat']['id']
-                elif not entry['gm']:
+                elif not entry['gm'] and not deferred_reply:
                     entry['gm'] = 'Что вы хотите узнать или попробовать?'
                 state['revision'] += 1
                 entry['chat_index'] = state['revision']
@@ -851,6 +918,7 @@ class AdventureStore:
         except (ValueError, KeyError, TypeError) as error:
             trace.setdefault('duration_ms', round((time.monotonic() - provider_started) * 1000))
             trace.update(status='failed', error='Ответ не применён: ' + str(error))
+            if isinstance(error,AgentRejected):trace['verification_issues']=error.issues
             with self.store._connection() as c:
                 for table in ('adventure_requests', 'ai_requests'):
                     c.execute(f'UPDATE {table} SET body=? WHERE room_id=? AND request_id=?', (json.dumps(trace, ensure_ascii=False), room, key))

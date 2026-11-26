@@ -13,8 +13,10 @@ AID_DC = RULES['aid'].get('dc', 15)
 
 def validate_proposal(value: object) -> dict:
     required = {'intent', 'reply', 'steps'}
-    if not isinstance(value, dict) or not required <= set(value) or set(value) - required - {'voice', 'interlocutor'}:
+    if not isinstance(value, dict) or not required <= set(value) or set(value) - required - {'voice', 'interlocutor', 'world_request'}:
         raise ValueError('Мастер вернул неверный формат плана.')
+    if 'world_request' in value and type(value['world_request']) is not bool:
+        raise ValueError('world_request должен быть true или false.')
     if 'interlocutor' in value and (not isinstance(value['interlocutor'], str) or len(value['interlocutor']) > 120):
         raise ValueError('Неверная ссылка на собеседника.')
     if 'voice' in value and value['voice'] not in ('gm', 'npc'):

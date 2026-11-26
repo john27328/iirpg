@@ -32,7 +32,7 @@ class SoloPlaytest(Playtest):
 
     def play(self):
         self.begin('solo evening')
-        first=self.state()['world']['adventure']
+        first=self.state()['world']['adventure'];hero=self.state()['character_id']
         self.turn(0,'Расскажи, что случилось. Что ты уже знаешь, а что пока только подозреваешь?')
         for stage in first['stages']:
             self.turn(0,'Иду в место «'+stage['name']+'».')

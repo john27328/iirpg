@@ -55,6 +55,10 @@ def pack(connection: Connection, state: dict) -> dict:
                 current = result['world'][group]
                 if key not in state['world'][group]:removed.append([group,key])
                 elif current.get(key) == value:current.pop(key)
+    for key, digest in result['campaign'].get('hook_refs', {}).items():
+        current = result['world'].get('story_hooks', {})
+        if key not in state['world'].get('story_hooks', {}):removed.append(['story_hooks',key])
+        elif current.get(key) == get(connection,digest,'story_hook'):current.pop(key)
     result['campaign']['removed_records'] = removed
     return result
 
@@ -66,7 +70,10 @@ def hydrate(connection: Connection, state: dict) -> dict:
     for digest in state['campaign'].get('scene_refs', {}).values():
         fragment = get(connection, digest, 'scene')
         for group in base:base[group].update(fragment[group])
-    for group in base:state['world'][group] = {**base[group], **overlays[group]}
+    if state['campaign'].get('hook_refs'):
+        base['story_hooks'] = {key:get(connection,digest,'story_hook')
+                               for key,digest in state['campaign']['hook_refs'].items()}
+    for group in base:state['world'][group] = {**base[group], **overlays.get(group,{})}
     for group, key in state['campaign'].pop('removed_records', []):state['world'][group].pop(key,None)
     return state
 

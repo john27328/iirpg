@@ -147,7 +147,8 @@ class ProgressionTests(unittest.TestCase):
             def complete(client,payload,timeout):
                 client.calls.append(json.loads(payload['messages'][1]['content']))
                 return {'content':json.dumps({'intent':'act','reply':'','steps':[{'rule':client.action, **({'ability':client.objective} if client.action=='cast' else {})}]})}
-        client=Client(); return AdventureStore(AIService(self.combat,self.scene,load_config(),client)),client
+        client=Client(); config=load_config();config['session_agent']=False
+        return AdventureStore(AIService(self.combat,self.scene,config,client)),client
 
     def say(self,session,text='Создаю свет',key=None):
         return session.execute(self.room,{'revision':session.read(self.room)['revision'],'character_id':self.actor,'text':text},key or str(uuid4()))

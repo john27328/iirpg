@@ -19,7 +19,7 @@ def main() -> None:
     parser.add_argument('--playwright-module',type=Path,required=True)
     parser.add_argument('--widths',type=int,nargs='+',default=[1280,390])
     parser.add_argument('--model',help='Override both configured models with this free model')
-    parser.add_argument('--max-requests',type=int,default=80)
+    parser.add_argument('--max-requests',type=int,default=100)
     args=parser.parse_args()
     if args.model and not(args.model.endswith(':free') or args.model=='openrouter/free'):parser.error('Only free models allowed')
     if not 1<=args.max_requests<=100:parser.error('Use 1..100 requests')

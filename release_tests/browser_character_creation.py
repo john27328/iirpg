@@ -23,6 +23,7 @@ def main():
             def ready(self):return True
             def complete(self,payload,timeout):
                 name=payload['response_format']['json_schema']['name']
+                if name=='session_verification':return {'content':json.dumps({'ok':True,'issues':[]})}
                 if name=='action_plan':return {'content':json.dumps({'intent':'question','voice':'gm','interlocutor':'','reply':'Вы можете исследовать мир и выбирать свои действия. Сообщение получено.','steps':[]})}
                 current=json.loads(payload['messages'][1]['content'])['current_proposal']
                 return {'content':json.dumps({'reply':'Выбранный перк увеличивает скорость на 5 футов. Характеристики назначаются правилами, а не произвольными числами.','choices':[],'proposal':current})}

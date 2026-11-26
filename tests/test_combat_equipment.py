@@ -12,6 +12,7 @@ class CombatEquipmentTests(unittest.TestCase):
     def setUp(self):
         temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
         self.server=ChatHTTPServer(('127.0.0.1',0),Path(temporary.name)/'game.sqlite3');self.addCleanup(self.server.server_close)
+        self.server.ai.config['session_agent']=False
         class Client:
             def ready(self):return True
             def complete(self,*args):return {'content':json.dumps({'intent':'act','reply':'','steps':[{'rule':'combat','target':'warden'}]})}

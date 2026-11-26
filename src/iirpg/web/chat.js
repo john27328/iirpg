@@ -312,7 +312,7 @@ return class Chat {
       await (this.options.refresh ? this.options.refresh() : env.refreshChats(targetRoom, epoch));
       if(offer.metadata?.session_check){
         const thinking=document.createElement('p');thinking.className='gm-thinking';thinking.setAttribute('role','status');thinking.textContent='Мастер описывает последствия…';this.thinking=thinking;this.list.after(thinking);
-        try{await env.request(`/api/rooms/${targetRoom}/session/react`,{method:'POST',body:JSON.stringify({offer_id:offer.request_id}),timeoutMs:90000});}finally{thinking.remove();}
+        try{await env.request(`/api/rooms/${targetRoom}/session/react`,{method:'POST',body:JSON.stringify({offer_id:offer.request_id}),timeoutMs:180000});}finally{thinking.remove();}
       }
       env.setConnection(true);
       try { await (this.options.refresh ? this.options.refresh() : env.refreshChats(targetRoom, epoch)); } catch {
@@ -375,7 +375,7 @@ return class Chat {
           if(!hero)throw new Error('Сначала создайте персонажа во вкладке персонажей.');
           this.retry.sessionCommand={revision:story.revision,character_id:hero,text};
         }
-        await env.request(`/api/rooms/${targetRoom}/session`,{method:'POST',body:JSON.stringify(this.retry.sessionCommand),headers:{'Idempotency-Key':this.retry.request_id},timeoutMs:120000});
+        await env.request(`/api/rooms/${targetRoom}/session`,{method:'POST',body:JSON.stringify(this.retry.sessionCommand),headers:{'Idempotency-Key':this.retry.request_id},timeoutMs:300000});
       }else await env.request(`/api/rooms/${targetRoom}/messages`, {
         method: "POST", body: JSON.stringify(this.retry),
       });

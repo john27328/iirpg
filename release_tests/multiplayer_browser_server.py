@@ -23,6 +23,8 @@ def main():
         class Client:
             def ready(self):return True
             def complete(self,payload,timeout):
+                if payload['response_format']['json_schema']['name']=='session_verification':
+                    return {'content':json.dumps({'ok':True,'issues':[]})}
                 data=json.loads(payload['messages'][1]['content']);time.sleep(1.2)
                 if data.get('role')=='gm':
                     option=next((key for key,value in data['options'].items() if value.get('effect')=='end_turn'),'manual')

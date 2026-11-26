@@ -214,3 +214,25 @@ class CampaignTests(unittest.TestCase):
         for i in range(3):
             parent=campaign.local_site(state,parent,f'Участок {i}');state['location']=parent
         with self.assertRaises(ValueError):campaign.local_site(state,parent,'Новый материк')
+
+    def test_transit_does_not_generate_scenes_until_a_stop_or_inspection(self):
+        state=self.state()
+        steps=[{'rule':'move','target':key} for key in ('riverbank','new_bridge','watchtower')]
+        trial,_,needed=campaign.creation_plan(state,{'intent':'act','reply':'','steps':steps})
+        self.assertEqual(needed,['watchtower'])
+        self.assertTrue(trial['world']['places']['new_bridge']['unexplored'])
+        inspected=[steps[0],{'rule':'look','target':'riverbank'},steps[1]]
+        _,_,needed=campaign.creation_plan(state,{'intent':'act','reply':'','steps':inspected})
+        self.assertEqual(needed,['riverbank','new_bridge'])
+
+    def test_generator_can_only_follow_leads_destined_for_this_area(self):
+        self.say(0,{'rule':'move','target':'riverbank'})
+        self.say(0,{'rule':'look','target':'riverbank:feature:0'})
+        state=self.state()
+        incoming=next(iter(state['world']['leads'].values()))['destination']
+        other=next(key for key,p in state['world']['places'].items() if p.get('campaign_anchor') and key!=incoming)
+        payload=campaign.generation_payload(state,other,'Иду дальше.',self.server.ai.config)
+        data=json.loads(payload['messages'][1]['content'])
+        self.assertEqual(data['open_leads'],[])
+        fields=payload['response_format']['json_schema']['schema']['properties']['discoveries']['items']['properties']
+        self.assertEqual(fields['follow_up']['enum'],[''])

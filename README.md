@@ -467,6 +467,12 @@ PYTHONPATH=src python3 release_tests/live_multiplayer.py --live --case cooperati
 поиска. Осмотр или открытие записывает находку; следующая локация продолжает
 найденный след. [Поведение и живой прогон](docs/campaign-investigation-2026-11-25.md).
 
+Новый слух или небольшое место можно получить в обычном разговоре с NPC либо
+при обращении к ведущему. Зацепка сохраняется с источником; подробная сцена
+создаётся при посещении. Планы, описания и новые сцены проходят проверку и до
+двух исправлений с конкретными замечаниями.
+[Как дописывается мир и работает проверка](docs/world-growth-agent.md).
+
 ```bash
 PYTHONPATH=src python3 release_tests/live_multiplayer.py --live --case campaign_journey
 PYTHONPATH=src python3 release_tests/live_multiplayer.py --live --case campaign_investigation

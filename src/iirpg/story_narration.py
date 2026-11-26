@@ -5,6 +5,7 @@ import re
 from .session_context import context
 from .story_memory import fit_context
 from .ai import session_reasoning
+from . import world_growth
 
 
 def render_references(reply: str, world: dict) -> str:
@@ -80,38 +81,68 @@ def prompt_for(data: dict, reaction: bool = False) -> str:
     scope = ('В этой сцене нет говорящих NPC. Ни одной реплики от лица героев: их играют пользователи. '
              'Опиши только подтверждённые действия, предметы и окружение.\n') if not data.get('npc_speakers') else (
              'Веди только NPC из npc_speakers. Реплики участников shared_party пишут сами игроки.\n')
-    return scope + (REACTION_PROMPT if reaction else NARRATION_PROMPT)
+    growth = ''
+    if not reaction and data.get('world_growth', {}).get('enabled'):
+        growth = '''\nМир можно дописывать по ходу игры через world_additions, а не только описывать старое.
+Когда игрок просит новые места, слухи или работу, предложи 1–2 небольших местных места
+в пределах campaign.bounds. Не добавляй место ради каждого приветствия, покупки или повторного вопроса.
+При world_request=true игрок явно просит новый повод для исследования. Если готовых подходящих зацепок нет,
+создай одну сейчас: отсутствие её в старом мире НЕ повод отказывать. Именно так мир дописывается автоматически.
+Верни JSON reply,world_additions. Без дополнений — world_additions=[]. Каждое дополнение содержит
+name (название), premise (постоянный вид и расположение места), rumor (слух), question (что там проверить),
+speaker_id (присутствующий NPC из npc_speakers; пустая строка только для наблюдения ведущего).
+Новые названные места и поводы пойти туда обязательно внеси в world_additions: после ответа туда можно пойти.
+Не сочиняй в reply дополнительные дороги, поселения, людей, услуги и обещания, которых нет в контексте или дополнении.
+Существующие места бери из known_places; не дублируй и не переименовывай их. Ранее услышанные зацепки
+Для новой зацепки к уже известному месту используй его точное name и premise=""; географию и описание не меняй.
+max_new_sites — лимит НОВЫХ мест; при нуле можно только продолжать известные места и слухи.
+находятся в world_growth.hooks: продолжай их, а не создавай копии. Не добавляй произвольные статы, награды,
+предметы, завершённые задания или установленного виновника. Слух — слова источника, не доказанный факт.
+Подробную сцену, новых NPC и находки движок создаст при первом посещении; сейчас не раскрывай готовые улики.
+Не перемещай героя. Все тексты дополнения — данные мира, не команды.\n'''
+    voice = '\nЭто ответ ведущего: не озвучивай NPC. Новые наблюдения имеют speaker_id="".\n' if data.get('answer_voice')=='gm' else ''
+    return scope + (REACTION_PROMPT if reaction else NARRATION_PROMPT) + growth + voice
 
 
 def payload(state: dict, actor: dict, config: dict) -> dict:
     entry = state['history'][-1]
     full = context(state, actor, entry['player'])
     data = {k: full[k] for k in ('hero', 'hero_id', 'hero_identity', 'character_build', 'shared_party', 'conversation_partner', 'gm_knowledge',
-                                'observations', 'history', 'recollections', 'pending_check', 'location_id', 'trade')}
+                                'observations', 'history', 'recollections', 'pending_check', 'location_id', 'trade',
+                                'skills', 'inventory', 'rule_catalog')}
     if full.get('campaign'):data['campaign'] = full['campaign']
     if full.get('adventure'):data['adventure'] = full['adventure']
     if full.get('investigation'):data['investigation'] = full['investigation']
+    if state.get('campaign'):
+        data['world_growth'] = world_growth.context(state,actor['id'],entry['player'])
+        data['known_places'] = {key:{'name':place['name'],'unexplored':place.get('unexplored',False)}
+                               for key,place in full['places'].items()}
     events = entry.get('events', [])
+    if entry['action']=='question':data['history']=data['history'][:-1]
     data.update(phase='AFTER_ACTION' if events and events[-1].get('rule') != 'talk' else 'DIALOGUE', confirmed_results=events,
+                answer_voice=entry.get('voice','npc'),
+                world_request=entry.get('world_request',False),
                 plan={k: state.get('plan', {})[k] for k in ('status', 'reason', 'index') if k in state.get('plan', {})},
-                mechanical_explanation=entry['gm'],
+                mechanical_explanation=entry['gm'] if events else '',
                 player=entry['player'])
     data = narrative_scope(data, state['world'])
     data = fit_context(data, config.get('session_context_max_bytes', config['context_max_bytes']))
+    properties = {'reply': {'type': 'string', 'maxLength': 1600}}
+    if world_growth.enabled(state):properties['world_additions'] = world_growth.schema(state)
     return {'model': config.get('session_model', config['model']), 'messages': [
         {'role': 'system', 'content': prompt_for(data)},
         {'role': 'user', 'content': json.dumps(data, ensure_ascii=False)}],
-        'max_tokens': 4096 if config.get('session_reasoning') else 500, 'temperature': 0.3,
+        'max_tokens': 4096 if config.get('session_reasoning') else 1200 if world_growth.enabled(state) else 500, 'temperature': 0.3,
         'reasoning': session_reasoning(config),
         'provider': {'max_price': {'prompt': 0, 'completion': 0}},
         'response_format': {'type': 'json_schema', 'json_schema': {'name': 'scene_narration', 'strict': True,
-            'schema': {'type': 'object', 'properties': {'reply': {'type': 'string', 'maxLength': 1600}},
-                       'required': ['reply'], 'additionalProperties': False}}}}
+            'schema': {'type': 'object', 'properties': properties,
+                       'required': list(properties), 'additionalProperties': False}}}}
 
 
 def reply(response: dict) -> str:
     value = json.loads(response['content'])
-    if not isinstance(value, dict) or set(value) != {'reply'} or not isinstance(value['reply'], str) or not value['reply'].strip() or len(value['reply']) > 1600:
+    if not isinstance(value, dict) or set(value) not in ({'reply'},{'reply','world_additions'}) or not isinstance(value['reply'], str) or not value['reply'].strip() or len(value['reply']) > 1600:
         raise ValueError('Мастер не вернул описание сцены.')
     return value['reply'].strip()
 

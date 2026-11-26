@@ -41,8 +41,10 @@ def prepare(world: dict, place_id: str, features: list[dict], discoveries: objec
         if not isinstance(entry, dict) or set(entry) != {'source','trigger','observation','destination','question','follow_up'}:
             raise ValueError('Неверные поля зацепки.')
         source = entry['source']
-        if type(source) is not int or not 0 <= source < len(features) or source in sources:
-            raise ValueError('Зацепке нужен отдельный существующий объект сцены.')
+        if type(source) is not int or not 0 <= source < len(features):
+            raise ValueError(f'discoveries[{index}].source должен указывать на существующий features[0..{len(features)-1}].')
+        if source in sources:
+            raise ValueError(f'discoveries[{index}].source={source} уже использован другой зацепкой. Каждой зацепке нужен отдельный объект: выберите другой features или удалите дублирующую зацепку; look/open для одного source одновременно не поддержаны.')
         sources.add(source)
         trigger = entry['trigger']
         if trigger not in ('look','open') or (trigger == 'open' and features[source]['kind'] != 'obstacle'):
@@ -63,17 +65,22 @@ def prepare(world: dict, place_id: str, features: list[dict], discoveries: objec
 
 
 def reveal(world: dict, source_id: str, actor_id: str, rule: str) -> dict | None:
+    from .world_growth import examine
     source = world['entities'].get(source_id, {}); discovery = source.get('discovery')
     if not discovery:return None
     permitted = ((discovery['trigger'] == 'look' and rule == 'look') or
                  (discovery['trigger'] == 'open' and source.get('open') and rule in ('look','open','force_open','pick_lock','improvise')))
     if not permitted:return None
-    if discovery['id'] in world.get('leads', {}):return deepcopy(world['leads'][discovery['id']])
+    if discovery['id'] in world.get('leads', {}):
+        known=deepcopy(world['leads'][discovery['id']])
+        examine(world,known,actor_id)
+        return known
     found_at = location(world,actor_id)
     lead = {k:deepcopy(discovery[k]) for k in ('id','observation','destination','question','follow_up')}
     lead.update(source_id=source_id, source_name=source['name'], source_origin=discovery['origin'], found_at=found_at,
                 discovered_by=actor_id, discovered_at=world.get('time',0), status='open', continuations=[])
     world.setdefault('leads', {})[lead['id']] = lead
+    examine(world, lead, actor_id)
     source['discovery_revealed'] = True
     parent = world['leads'].get(lead['follow_up'])
     if parent and parent['destination'] == anchor(world,discovery['origin']):
@@ -83,6 +90,8 @@ def reveal(world: dict, source_id: str, actor_id: str, rule: str) -> dict | None
 
 
 def visit(world: dict, place_id: str, actor_id: str) -> None:
+    from .world_growth import visit as visit_hook
+    visit_hook(world, place_id, actor_id)
     for lead in world.get('leads', {}).values():
         if lead['destination'] == anchor(world,place_id) and lead['status'] == 'open':
             lead.update(status='visited', visited_by=actor_id, visited_at=world.get('time',0))

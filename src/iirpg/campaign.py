@@ -49,7 +49,7 @@ def local_site(state: dict, parent: str, title: str) -> str:
     """Stable identity for a local discovery; no new region or existing-world patch."""
     if not state.get('campaign'):raise ValueError('Исследование окрестностей требует кампании.')
     world = state['world']; anchor = world['places'].get(parent, {})
-    if not anchor.get('campaign_anchor') and not anchor.get('parent'):
+    if not anchor.get('campaign_anchor') and not anchor.get('campaign_pinned') and not anchor.get('parent'):
         raise ValueError('Выберите точку региона, окрестности которой исследуете.')
     if parent != state['location']:
         raise ValueError('Сначала доберитесь до выбранного места.')
@@ -76,7 +76,8 @@ def local_site(state: dict, parent: str, title: str) -> str:
 def creation_plan(state: dict, proposal: dict) -> tuple[dict, dict, list[str]]:
     trial = deepcopy(state); proposal = deepcopy(proposal); needed = []
     if not trial.get('campaign'):return trial, proposal, needed
-    for step in proposal['steps']:
+    for index,step in enumerate(proposal['steps']):
+        exploring = step['rule']=='explore'
         if step['rule'] == 'explore':
             key = local_site(trial, step.get('target', ''), step.get('method', ''))
             step.clear(); step.update(rule='move', target=key)
@@ -86,7 +87,8 @@ def creation_plan(state: dict, proposal: dict) -> tuple[dict, dict, list[str]]:
         else:
             continue
         if key in trial['world']['places']:
-            if trial['world']['places'][key].get('unexplored') and key not in needed:
+            next_is_move = index+1<len(proposal['steps']) and proposal['steps'][index+1]['rule']=='move'
+            if trial['world']['places'][key].get('unexplored') and key not in needed and (exploring or not next_is_move):
                 if evening.enabled(trial) and trial['world']['places'][key].get('adventure_id')!=trial['world'].get('adventure',{}).get('id'):
                     raise ValueError('Эта точка относится к прошлой завершённой истории. Выберите место текущего приключения.')
                 needed.append(key)
@@ -159,7 +161,7 @@ def merge(state: dict, trial: dict, additions: list[tuple[str, dict]]) -> None:
     validate(state['world'])
 
 
-def scoped_world(state: dict, text: str = '') -> dict:
+def scoped_world(state: dict, text: str = '', actor_id: str | None = None) -> dict:
     world = state['world']
     if not state.get('campaign'):return world
     here = state['location']; places = world['places']; query = text.casefold()
@@ -167,6 +169,8 @@ def scoped_world(state: dict, text: str = '') -> dict:
     active=lambda value:not value.get('adventure_id') or value['adventure_id']==active_id
     keep = {key for key, p in places.items() if (p.get('campaign_anchor') or p.get('campaign_pinned')) and active(p)}
     keep.add(here); keep.update(e['to'] for e in places[here].get('exits', []))
+    from .world_growth import relevant
+    keep.update(hook['destination'] for hook in relevant(state,actor_id or state['character_id'],text))
     parent = places[here].get('parent')
     while parent:
         keep.add(parent); parent = places[parent].get('parent')
@@ -191,7 +195,12 @@ features: 1–3 объекта с name,description,kind (landmark,item,obstacle)
 obstacle — только механически запертая дверь или ящик: движок поддерживает взлом и силовое открывание.
 Затопленная тропа, река, склон и заросли — landmark; не превращай их в замок, который открывается отмычкой.
 Сохрани неизменные факты seed.canon в наблюдениях или знаниях. Не выдавай все тайны региона в одной сцене.
+story_hooks — ранее услышанные слухи и вопросы об этом месте. Существование места и seed.canon уже сохранены.
+rumor — слова указанного источника, а не установленная истина. Создай наблюдение для проверки question:
+оно может подтвердить, уточнить или опровергнуть слух. Приход сам по себе ничего не доказывает.
 discoveries — 1–2 конкретных физических наблюдения, которые игрок сможет обнаружить при изучении объекта.
+Каждая зацепка использует отдельный source. Не задавай две зацепки look/open на одном объекте:
+выбери один trigger или помести вторую зацепку на другой features. Нумерация features начинается с 0.
 source — индекс features с нуля, trigger — look для осмотра или open для содержимого запертого препятствия.
 observation — что обнаружено (надпись, след, отметка), а не готовый вывод о виновнике; до изучения не раскрывай это в description.
 destination — ID ДРУГОЙ главной точки, question — какой конкретный вопрос там можно исследовать, follow_up — ID найденной зацепки или пустая строка.
@@ -207,6 +216,7 @@ established_people — ЗАПРЕЩЁННЫЕ имена для новых NPC. 
 
 
 def generation_payload(state: dict, place_id: str, text: str, config: dict) -> dict:
+    from .world_growth import scene_context
     world = state['world']
     neighbors = [e['to'] for e in world['places'][place_id].get('exits', [])]
     settled = {key: {'name':world['places'][key]['name'], 'description':world['places'][key]['description'],
@@ -217,7 +227,8 @@ def generation_payload(state: dict, place_id: str, text: str, config: dict) -> d
     npc = {'name':field(60), 'role':field(80), 'voice':field(160), 'goal':field(160), 'boundary':field(200),
            'knowledge':{'type':'array','minItems':1,'maxItems':3,'items':field(200)}}
     feature = {'name':field(80),'description':field(400),'kind':{'type':'string','enum':['landmark','item','obstacle']}}
-    known_leads = campaign_leads.relevant(world,place_id,text)
+    root = campaign_leads.anchor(world,place_id)
+    known_leads = [lead for lead in campaign_leads.relevant(world,place_id,text) if lead['destination']==root]
     discovery = {'source':{'type':'integer','minimum':0,'maximum':2},
         'trigger':{'type':'string','enum':['look','open']},'observation':field(300),
         'destination':{'type':'string','enum':[k for k,p in world['places'].items() if p.get('campaign_anchor') and (not p.get('adventure_id') or p['adventure_id']==world.get('adventure',{}).get('id'))]},
@@ -229,7 +240,7 @@ def generation_payload(state: dict, place_id: str, text: str, config: dict) -> d
     data = {'campaign':{k:state['campaign'][k] for k in ('name','premise','bounds','facts')},
         'seed':state['world']['places'][place_id], 'established_people': [v['name'] for v in state['world']['entities'].values() if v.get('campaign_pinned')],
         'main_points':{k:{'name':p['name'],'canon':p.get('canon',[])} for k,p in state['world']['places'].items() if p.get('campaign_anchor') and (not p.get('adventure_id') or p['adventure_id']==world.get('adventure',{}).get('id'))},
-        'neighbor_canon':settled, 'open_leads':known_leads, 'player':text}
+        'neighbor_canon':settled, 'open_leads':known_leads, 'story_hooks':scene_context(state,place_id), 'player':text}
     director=evening.director_context(world,place_id)
     if director:data['evening_director']=director
     return {'model':config.get('session_model',config['model']), 'messages':[{'role':'system','content':SCENE_PROMPT},{'role':'user','content':json.dumps(data,ensure_ascii=False)}],

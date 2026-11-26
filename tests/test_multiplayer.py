@@ -21,6 +21,7 @@ class MultiplayerTests(unittest.TestCase):
         self.rolls=[]
         self.server=ChatHTTPServer(('127.0.0.1',0),Path(self.temp.name)/'game.sqlite3',access_token=self.owner,
                                   dice=DiceTool(roll_die=lambda sides:self.rolls.append(sides) or min(sides,20)))
+        self.server.ai.config['session_agent']=False  # Individual rule tests stub only the planner.
         self.thread=Thread(target=lambda:self.server.serve_forever(poll_interval=.01),daemon=True);self.thread.start()
         def cleanup():self.server.shutdown();self.server.server_close();self.thread.join()
         self.addCleanup(cleanup)

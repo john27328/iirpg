@@ -7,6 +7,7 @@ from .party import members
 from .campaign import scoped_world
 from .campaign_leads import public_context
 from . import evening
+from . import world_growth
 from .story_memory import dialogue
 
 PROMPT = '''Ты ведущий настольной RPG на русском языке. Ты играешь NPC и описываешь мир.
@@ -26,20 +27,26 @@ hero/hero_id — персонаж ИГРОКА, не ты. Никогда не �
 Если аудитория старой записи неизвестна, не выдавай её за личное воспоминание другого NPC.
 В shared_party другие герои управляются своими игроками. Не говори и не принимай решения за них.
 
-Верни JSON {intent, reply, steps, voice, interlocutor}. intent: question, act, clarify или cancel.
+Верни JSON {intent, reply, steps, voice, interlocutor, world_request}. intent: question, act, clarify или cancel.
 plan описывает прошлую попытку, а не список шагов для повторения. Строй новый план только для последнего player.
 inventory — текущее снаряжение, включая изменения через интерфейс. stowed/hands=0 означает убрано;
 не бери убранные предметы снова без просьбы игрока. Прошлое «держу в руках» не отменяет текущий inventory.
 interlocutor — ID присутствующего NPC, способного отвечать, либо пустая строка.
 О выбывшем NPC и последствиях боя отвечает ведущий: voice=gm, interlocutor="", без новых действий.
+Вопрос о новых местах, слухах, работе или приключениях — question, world_request=true, без шагов:
+ответ и новые местные зацепки создаст рассказчик и сохранит в мире. Не отказывай только из-за отсутствия готового квеста.
+При обращении к ведущему или без NPC используй voice=gm; при обращении к NPC — voice=npc.
+Для обычного разговора, механики, памяти, покупки и уже известного пути world_request=false.
+world_growth.hooks — сохранённые слухи с источником и состоянием исследования. Используй их названные места
+как обычные цели move. Не превращай rumor в подтверждённую истину; investigated означает найденное наблюдение, не готовую победу.
 При явном обращении к другому NPC выбирай его, а не прежнего conversation_partner. Это только выбор собеседника, без согласия или движения.
 voice=gm для вопросов о механике: возможность действия, навык, инструменты, КС, бросок, способности.
 Такой вопрос требует точного ответа мастера, а не придуманной реплики NPC. Укажи известные условия в reply.
 voice=npc для обычного разговора с персонажем, личных вопросов, воспоминаний, рассказа о его наблюдениях.
 Обычный вопрос торговцу о цене или выборе товара — voice=npc: ответит сам торговец по фактам trade.
 «Прошу NPC помочь/пойти самому/нарисовать дорогу. Что он отвечает?» — уже обращение к NPC, а не вопрос о будущей возможности хода.
-Отыграй его конкретный ответ сейчас. Если действие не поддержано или человек не согласен, он может отказать и объяснить почему.
-Не отвечай «NPC ответит сам», «не буду придумывать его реплику», «сначала явно попросите» на уже высказанную просьбу.
+Выбери question и собеседника сейчас: конкретную реплику сыграет рассказчик после проверки.
+reply — короткое пояснение обращения, а не уже сыгранный диалог. Не заставляй игрока повторно заявлять просьбу.
 Предложение платы без передачи денег — разговор: обсуди его, не списывай деньги и не обещай несуществующую услугу.
 При уточнении используй предыдущую просьбу из history: не заставляй заново объяснять уже названную цель.
 Для act/clarify/cancel voice=gm. voice не даёт права совершить действие.
@@ -147,7 +154,7 @@ reply читает игрок: пиши обычным русским языко
 
 def context(state: dict, actor: dict, text: str, reaction: bool = False) -> dict:
     from .trade import trade_view
-    world = scoped_world(state,text); place = state['location']
+    world = scoped_world(state,text,actor['id']); place = state['location']
     party_ids=set(members(state))
     npcs = {key: {**{k: deepcopy(v) for k, v in value.items() if k in ('name', 'role', 'knowledge', 'goals', 'status', 'agreements', 'commitments', 'coerce_immunity', 'memories', 'personality')}, 'attitude_to_hero': attitude(value, actor['id'])}
             for key, value in world['entities'].items() if value['kind'] == 'npc' and location(world, key) == place
@@ -200,6 +207,7 @@ def context(state: dict, actor: dict, text: str, reaction: bool = False) -> dict
             'trade': trade_view(world, actor),
             **({'adventure':evening.public(state)} if evening.enabled(state) else {}),
             **({'investigation':public_context(state,text,actor['id'])} if state.get('campaign') else {}),
+            **({'world_growth':world_growth.context(state,actor['id'],text)} if state.get('campaign') else {}),
             **({'campaign':{**{k:deepcopy(state['campaign'][k]) for k in ('name','premise','bounds','facts')},'episodes':[{k:e[k] for k in ('title','status','outcome') if k in e} for e in state['campaign']['episodes'][-8:]]}} if state.get('campaign') else {}),
             'plan': {k: v for k, v in state.get('plan', {}).items() if k in ('status', 'reason', 'original_text', 'index')}, 'rule_catalog': {key: {k: v for k, v in spec.items() if k in ('summary', 'skill', 'seconds', 'required_fields')} for key, spec in RULES.items()},
             'phase': 'AFTER_ROLL' if reaction else 'PLAYER_TURN',
@@ -207,8 +215,8 @@ def context(state: dict, actor: dict, text: str, reaction: bool = False) -> dict
             'confirmed_results': [{k:deepcopy(v) for k,v in h.items() if k in ('player','gm','check','action','rule','target','actor_name','character_id','effects')} for h in state['history'][-2:]] if reaction else []}
 
 
-def schema(state: dict, text: str = '') -> dict:
-    visible = scoped_world(state,text)
+def schema(state: dict, text: str = '', actor_id: str | None = None) -> dict:
+    visible = scoped_world(state,text,actor_id)
     entities = visible['entities']
     refs = ['', *entities, *visible['places']]
     properties = {}
@@ -218,10 +226,11 @@ def schema(state: dict, text: str = '') -> dict:
     return {'type': 'object', 'properties': {
         'intent': {'type': 'string', 'enum': ['question', 'act', 'clarify', 'cancel']},
         'reply': {'type': 'string'}, 'voice': {'type': 'string', 'enum': ['gm', 'npc']},
+        'world_request': {'type':'boolean'},
         'interlocutor': {'type': 'string', 'enum': ['', *[k for k, v in entities.items() if v['kind'] == 'npc' and location(state['world'], k) == state['location'] and v.get('status','standing') in ('standing','surrendered')]]},
         'steps': {'type': 'array', 'maxItems': 8, 'items': {'type': 'object', 'properties': properties,
                   'required': list(properties), 'additionalProperties': False}}},
-        'required': ['intent', 'reply', 'steps', 'voice', 'interlocutor'], 'additionalProperties': False}
+        'required': ['intent', 'reply', 'steps', 'voice', 'interlocutor', 'world_request'], 'additionalProperties': False}
 
 
 def repeats_previous_reply(proposal: dict, history: list[dict], text: str) -> bool:

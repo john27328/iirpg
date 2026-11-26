@@ -18,6 +18,7 @@ class PlanRestartTests(unittest.TestCase):
     def seed(self, directory):
         (directory/'access-token').write_text('restart-action-plans-testing-token-123456789')
         server=ChatHTTPServer(('127.0.0.1',0),directory/'chat.sqlite3')
+        server.ai.config['session_agent']=False  # Agent review is tested separately.
         try:
             room=server.games.execute({'action':'create','name':'Перезапуск','scenario':'missing-book'},str(uuid4()))['room_id']
             state=server.adventure.read(room);actor=state['character_id']
@@ -45,6 +46,7 @@ class PlanRestartTests(unittest.TestCase):
             directory=Path(temporary)
             (directory/'access-token').write_text('restart-action-plans-testing-token-123456789')
             server=ChatHTTPServer(('127.0.0.1',0),directory/'chat.sqlite3')
+            server.ai.config['session_agent']=False  # Agent review is tested separately.
             class Client:
                 steps=[{'rule':'request','target':'hostess','method':'Не называть имени гостя.'}]
                 def ready(self):return True
@@ -108,6 +110,7 @@ class PlanRestartTests(unittest.TestCase):
             directory=Path(temporary)
             (directory/'access-token').write_text('restart-action-plans-testing-token-123456789')
             server=ChatHTTPServer(('127.0.0.1',0),directory/'chat.sqlite3')
+            server.ai.config['session_agent']=False  # Agent review is tested separately.
             class Client:
                 steps=[]
                 def ready(self):return True

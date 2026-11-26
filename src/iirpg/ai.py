@@ -31,7 +31,7 @@ SYSTEM_PROMPT = (
 def load_config(path: Path = DEFAULT_AI_CONFIG) -> dict:
     config = json.loads(path.read_text())
     required = {'model', 'max_tokens', 'timeout_seconds', 'daily_request_limit', 'context_max_bytes', 'npc', 'reasoning'}
-    optional = {'session_context_max_bytes', 'session_narration', 'session_model', 'session_reasoning', 'session_reasoning_tokens'}
+    optional = {'session_context_max_bytes', 'session_narration', 'session_model', 'session_reasoning', 'session_reasoning_tokens', 'session_agent', 'session_agent_repairs'}
     if not required <= set(config) or set(config) - required - optional:
         raise ValueError('Неизвестные или отсутствующие настройки ИИ.')
     model = config['model']
@@ -41,6 +41,10 @@ def load_config(path: Path = DEFAULT_AI_CONFIG) -> dict:
         raise ValueError('reasoning должен быть true или false.')
     if type(config.get('session_narration', False)) is not bool:
         raise ValueError('session_narration должен быть true или false.')
+    if type(config.get('session_agent',False)) is not bool:
+        raise ValueError('session_agent должен быть true или false.')
+    if type(config.get('session_agent_repairs',1)) is not int or not 0 <= config.get('session_agent_repairs',1) <= 2:
+        raise ValueError('session_agent_repairs должен быть от 0 до 2.')
     if type(config.get('session_reasoning', False)) is not bool:
         raise ValueError('session_reasoning должен быть true или false.')
     if 'session_reasoning_tokens' in config and (type(config['session_reasoning_tokens']) is not int or not 128 <= config['session_reasoning_tokens'] <= 2048):
@@ -141,6 +145,8 @@ class AIService:
                 'session_model': self.config.get('session_model', self.config['model']),
                 'session_context_max_bytes': self.config.get('session_context_max_bytes', self.config['context_max_bytes']),
                 'session_narration': self.config.get('session_narration', False),
+                'session_agent': self.config.get('session_agent',False),
+                'session_agent_repairs': self.config.get('session_agent_repairs',1),
                 'session_reasoning': self.config.get('session_reasoning', False),
                 'daily_request_limit': self.config['daily_request_limit'], 'requests_today': used,
                 'free_only': True}

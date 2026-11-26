@@ -26,6 +26,7 @@ class StoryFixture:
         test_gm_intents.GMIntentTests.setUp(self)
         self.client = Client()
         self.session = AdventureStore(AIService(self.combat, self.scene, load_config(), self.client))
+        self.session.ai.config['session_agent'] = False  # Agent review has its own stubbed tests.
         self.session.ai.config['session_narration'] = False
     def say(self, text, *steps, intent='act', reply='Пробуем выполнить замысел.', key=None):
         self.client.proposal = {'intent': intent, 'reply': reply, 'steps': list(steps)}
